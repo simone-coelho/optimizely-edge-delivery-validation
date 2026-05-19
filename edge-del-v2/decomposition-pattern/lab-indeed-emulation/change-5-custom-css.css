@@ -1,0 +1,127 @@
+/* Approximation styles for Indeed's pricing tier classes. Indeed's
+ * production CSS provides these via their global stylesheet (which
+ * doesn't load on our lab). On a real customer engagement these
+ * classes would already be defined on the customer's site; the
+ * variation's CSS field would only carry the *delta* the experiment
+ * needs.
+ *
+ * For the lab we ship the whole set here so the variation looks
+ * like a recognisable pricing page when rendered. Scoped under
+ * [data-tn-page="/hire/cs/pricing"] so it can only apply on the
+ * page that mirrors Indeed's /hire/cs/pricing.
+ *
+ * Authored as `custom_css` change on the variation, NOT in the
+ * customer's source. This is how a rapid-experimentation engineer
+ * should think about it: anything experiment-specific lives in
+ * Optimizely; the customer's codebase is read-only from the
+ * experiment's perspective.
+ */
+[data-tn-page="/hire/cs/pricing"] .tier { padding: 3rem 0; background: #f5f7fa; }
+[data-tn-page="/hire/cs/pricing"] .container { max-width: 1100px; margin: 0 auto; padding: 0 1.5rem; }
+[data-tn-page="/hire/cs/pricing"] .tier__headline { font-size: 2.25rem; font-weight: 700; margin: 0 0 0.5rem; text-align: center; color: #2d2d2d; }
+[data-tn-page="/hire/cs/pricing"] .tier__subtitle { font-size: 1rem; color: #595959; margin: 0 0 2rem; text-align: center; max-width: 640px; margin-left: auto; margin-right: auto; }
+[data-tn-page="/hire/cs/pricing"] .tier__list { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; }
+[data-tn-page="/hire/cs/pricing"] .tier__item { position: relative; background: #fff; border: 1px solid #e3e3e3; border-radius: 8px; padding: 2rem 1.5rem 1.5rem; display: flex; flex-direction: column; }
+[data-tn-page="/hire/cs/pricing"] .tier__item.blue { border-top: 4px solid #2557a7; }
+[data-tn-page="/hire/cs/pricing"] .tier__item.amber,
+[data-tn-page="/hire/cs/pricing"] .tier__item.advanced { border-top: 4px solid #f2a925; }
+[data-tn-page="/hire/cs/pricing"] .tier__item.core { border-top: 4px solid #595959; }
+[data-tn-page="/hire/cs/pricing"] .tier__pin { position: absolute; top: -0.75rem; left: 50%; transform: translateX(-50%); background: #2557a7; color: #fff; font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.75rem; border-radius: 4px; min-height: 1.25rem; }
+[data-tn-page="/hire/cs/pricing"] .tier__pin:empty { display: none; }
+[data-tn-page="/hire/cs/pricing"] .tier__title { font-size: 1.5rem; font-weight: 700; margin: 0 0 0.5rem; color: #2d2d2d; display: flex; align-items: center; gap: 0.25rem; }
+[data-tn-page="/hire/cs/pricing"] .tier__badge { font-size: 0.875rem; color: #2557a7; font-weight: 600; margin: 0 0 0.75rem; min-height: 1rem; }
+[data-tn-page="/hire/cs/pricing"] .tier__badge:empty { display: none; }
+[data-tn-page="/hire/cs/pricing"] .tier__description { font-size: 0.9rem; color: #595959; margin: 0 0 1rem; line-height: 1.4; }
+[data-tn-page="/hire/cs/pricing"] .tier__features { flex: 1; margin: 0 0 1.5rem; }
+[data-tn-page="/hire/cs/pricing"] .feature_title { font-weight: 600; font-size: 0.875rem; color: #2d2d2d; margin: 0 0 0.5rem; }
+[data-tn-page="/hire/cs/pricing"] .feature_item { font-size: 0.9rem; color: #595959; padding: 0.25rem 0; }
+[data-tn-page="/hire/cs/pricing"] .feature_item.dashed { border-bottom: 1px dashed #999; cursor: help; }
+[data-tn-page="/hire/cs/pricing"] .tier__action { margin-top: auto; }
+[data-tn-page="/hire/cs/pricing"] .tier__action a { display: block; text-align: center; background: #2557a7; color: #fff; padding: 0.75rem 1rem; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 0.9rem; }
+[data-tn-page="/hire/cs/pricing"] .tier__action a:hover { background: #1d4380; }
+[data-tn-page="/hire/cs/pricing"] .tooltip { display: none; position: absolute; z-index: 10; background: #2d2d2d; color: #fff; padding: 0.75rem; border-radius: 4px; max-width: 260px; font-size: 0.825rem; line-height: 1.4; margin-top: 0.25rem; }
+[data-tn-page="/hire/cs/pricing"] input[type="checkbox"]:checked + label + .tooltip,
+[data-tn-page="/hire/cs/pricing"] input[type="checkbox"]:checked ~ .tooltip { display: block; }
+[data-tn-page="/hire/cs/pricing"] input[type="checkbox"] { display: none; }
+[data-tn-page="/hire/cs/pricing"] label[for] { cursor: pointer; color: #2557a7; }
+[data-tn-page="/hire/cs/pricing"] .tooltip .close { position: absolute; top: 0.5rem; right: 0.5rem; cursor: pointer; }
+[data-tn-page="/hire/cs/pricing"] .tooltip .close::before { content: '×'; color: #fff; font-size: 1.25rem; line-height: 1; }
+
+/* Gold tier (Premium) — sits alongside .blue (Standard) and .core (Free). */
+[data-tn-page="/hire/cs/pricing"] .tier__item.gold { border-top: 4px solid #d4a017; }
+
+/* Tier-section tail content (the terms text and "learn more" link
+ * that appear below the three tier cards). */
+[data-tn-page="/hire/cs/pricing"] .tier__how-pricing-works,
+[data-tn-page="/hire/cs/pricing"] .tier__learn-more { max-width: 1100px; margin: 1.5rem auto 0; padding: 0 1.5rem; font-size: 0.875rem; color: #595959; }
+[data-tn-page="/hire/cs/pricing"] .tier__tnc { max-width: 1100px; margin: 2rem auto 0; padding: 0 1.5rem; font-size: 0.75rem; color: #767676; line-height: 1.5; }
+[data-tn-page="/hire/cs/pricing"] .tier__learn-more a { color: #2557a7; font-weight: 600; }
+
+/* ─── Comparison table (desktop) ──────────────────────────────────
+ * `.table__head` and `.table__body` each contain a flat list of
+ * children that flow into a 4-column grid: label + Free + Standard +
+ * Premium.
+ *
+ * `.table__head` children: [empty spacer, .core, .blue, .gold]
+ * `.table__body` children: [.table__title (spans all 4 cols),
+ *                           .feature (label cell with tooltip),
+ *                           .core, .blue, .gold,
+ *                           ... repeat per row]
+ *
+ * Each `.core`/`.blue`/`.gold` in the body has `aria-checked="true"`
+ * when the corresponding tier includes the feature — we render that
+ * as a ✓ glyph via `::before`. Section group headings
+ * (`.table__title`) span all four columns.
+ */
+[data-tn-page="/hire/cs/pricing"] .comparison { padding: 3rem 0; background: #fff; }
+[data-tn-page="/hire/cs/pricing"] .comparison__headline { font-size: 1.75rem; font-weight: 700; text-align: center; margin: 0 0 1.5rem; color: #2d2d2d; }
+
+[data-tn-page="/hire/cs/pricing"] .table__head,
+[data-tn-page="/hire/cs/pricing"] .table__body { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); gap: 0 1rem; align-items: center; }
+[data-tn-page="/hire/cs/pricing"] .table__head { padding: 1rem 0; border-bottom: 2px solid #2d2d2d; font-weight: 700; }
+[data-tn-page="/hire/cs/pricing"] .table__head > .core,
+[data-tn-page="/hire/cs/pricing"] .table__head > .blue,
+[data-tn-page="/hire/cs/pricing"] .table__head > .gold { text-align: center; font-size: 1rem; }
+
+[data-tn-page="/hire/cs/pricing"] .table__body { padding: 0 0 1.5rem; }
+[data-tn-page="/hire/cs/pricing"] .table__body > * { padding: 0.75rem 0; border-bottom: 1px solid #f1f1f1; }
+[data-tn-page="/hire/cs/pricing"] .table__body > .table__title { grid-column: 1 / -1; font-weight: 700; font-size: 1rem; color: #2d2d2d; margin-top: 1.25rem; border-bottom: none; padding-bottom: 0.25rem; }
+[data-tn-page="/hire/cs/pricing"] .table__body > .feature { font-size: 0.9rem; color: #2d2d2d; }
+[data-tn-page="/hire/cs/pricing"] .table__body > .core,
+[data-tn-page="/hire/cs/pricing"] .table__body > .blue,
+[data-tn-page="/hire/cs/pricing"] .table__body > .gold { text-align: center; min-height: 1.5rem; }
+
+[data-tn-page="/hire/cs/pricing"] .feature__title { display: inline-block; cursor: help; color: #2557a7; }
+[data-tn-page="/hire/cs/pricing"] .feature__description { font-size: 0.85rem; color: #767676; margin-top: 0.25rem; display: block; }
+
+/* Checkmark glyph — only on cells that carry aria-checked="true". */
+[data-tn-page="/hire/cs/pricing"] .table__body > .core[aria-checked="true"]::before,
+[data-tn-page="/hire/cs/pricing"] .table__body > .blue[aria-checked="true"]::before,
+[data-tn-page="/hire/cs/pricing"] .table__body > .gold[aria-checked="true"]::before { content: '\2713'; display: inline-block; color: #2557a7; font-weight: 700; font-size: 1.125rem; line-height: 1; }
+
+/* ─── Comparison cards (mobile) ───────────────────────────────────
+ * Lab keeps the desktop layout always visible by hiding the mobile
+ * version unless viewport is narrow. Indeed's real CSS would
+ * coordinate this via media queries; mirrored here.
+ */
+[data-tn-page="/hire/cs/pricing"] .m_comparison { padding: 3rem 0; background: #f5f7fa; display: none; }
+[data-tn-page="/hire/cs/pricing"] .m_comparison__title { font-size: 1.5rem; font-weight: 700; text-align: center; margin: 0 0 1.5rem; color: #2d2d2d; }
+[data-tn-page="/hire/cs/pricing"] .m_comparison__cards { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+[data-tn-page="/hire/cs/pricing"] .m_comparison__item,
+[data-tn-page="/hire/cs/pricing"] .m_comparison__cards > div { background: #fff; border: 1px solid #e3e3e3; border-radius: 8px; padding: 1.5rem; }
+[data-tn-page="/hire/cs/pricing"] .m_comparison__pin { font-size: 0.75rem; color: #2557a7; font-weight: 600; }
+[data-tn-page="/hire/cs/pricing"] .m_comparison__badge { font-size: 0.875rem; color: #595959; }
+[data-tn-page="/hire/cs/pricing"] .m_comparison__action { margin-top: 1rem; }
+@media (max-width: 768px) {
+  [data-tn-page="/hire/cs/pricing"] .comparison { display: none; }
+  [data-tn-page="/hire/cs/pricing"] .m_comparison { display: block; }
+}
+
+/* Helper: collapse-feature toggles row visibility — keep them
+ * always visible in the lab, hide the toggle. */
+[data-tn-page="/hire/cs/pricing"] .collapse-feature { display: none; }
+
+/* Optimizely-prefixed anchor wrappers used for analytics — we don't
+ * need them styled, just don't let them break flow. */
+[data-tn-page="/hire/cs/pricing"] .opt-1399-em-saa,
+[data-tn-page="/hire/cs/pricing"] .opt-1399-hmaf-lm { display: contents; }

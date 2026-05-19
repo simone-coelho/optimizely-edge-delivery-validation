@@ -1,0 +1,38 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "edge-del-v2-worker"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"
+compatibility_flags = ["nodejs_compat"]
+
+# JSON imports — case files bundled at build time.
+rules = [
+  { type = "Text", globs = ["**/*.html"], fallthrough = true }
+]
+
+# ─── Dev environment ──────────────────────────────────────────────────────
+# Mode B (local cases). Points at a local Nuxt dev origin so the worker can
+# rewrite the SSR'd response without needing Pages deployed.
+[env.dev.vars]
+MODE            = "local"
+PAGES_ORIGIN    = "http://127.0.0.1:3000"
+DEBUG           = "true"
+LAB_BUILD       = "edge-del-v2.dev"
+SNIPPET_ID      = ""                       # unused in MODE=local
+EDGE_ENV        = "dev"                    # passed to @optimizely/edge-delivery in MODE=sdk
+
+# ─── Prod environment (workers.dev) ───────────────────────────────────────
+# MODE=sdk routes through @optimizely/edge-delivery's applyExperiments() with
+# the live Optimizely test snippet 5953372780494848 (project "Labco HP",
+# account 8543082612). SNIPPET_ID is public info (it appears in every
+# customer's <script src> tag) so it's fine to commit here.
+[env.prod.vars]
+MODE            = "sdk"
+PAGES_ORIGIN    = "https://edge-del-v2-target.pages.dev"
+DEBUG           = "true"
+LAB_BUILD       = "edge-del-v2.prod.sdk"
+SNIPPET_ID      = "5953372780494848"
+EDGE_ENV        = "prod"
+
+# Observability (optional but useful for the lab — keep tail logs handy).
+[observability]
+enabled = true

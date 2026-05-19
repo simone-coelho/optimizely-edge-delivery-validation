@@ -1,0 +1,19 @@
+{
+  "id": "09-additive-into-vfor",
+  "name": "Insert a banner inside a keyed v-for parent",
+  "bucket": "fragile",
+  "pathMatch": "/pricing",
+  "notes": "Inserts a 4th <article> child into [data-edge-region='pricing-cards'] (PricingCards.vue's v-for parent, which binds exactly 3 plans via :key='plan.id'). Vue's hydrator reconciles the v-for and finds an unexpected 4th child with no matching vnode → discards it during recovery. This is the canonical 'additive into v-for parent' fragile case — distinct from case 04 (which inserts into an EMPTY static anchor and is therefore naturally tolerated). Annotator stamps data-allow-mismatch='children' on the parent; companion re-inserts post-hydration if Vue still discarded.",
+  "ops": [
+    {
+      "type": "add",
+      "selector": "[data-edge-region='pricing-cards']",
+      "html": "<article id=\"edge-banner-09\" class=\"card banner-promo\" data-edge-region=\"vfor-banner\"><h3>50% off all plans</h3><p>Inserted at the edge, into a v-for parent. Without reinforcement Vue discards this on hydration.</p></article>",
+      "position": "append"
+    }
+  ],
+  "expected": {
+    "withoutReinforcement": "recovered",
+    "withReinforcement":    "survives"
+  }
+}

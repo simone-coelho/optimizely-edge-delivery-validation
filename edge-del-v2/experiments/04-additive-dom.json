@@ -1,0 +1,19 @@
+{
+  "id": "04-additive-dom",
+  "name": "Additive DOM — insert a banner after the hero",
+  "bucket": "fragile",
+  "pathMatch": "/",
+  "notes": "Insert a banner at the [data-edge-anchor='home-banner'] anchor, which is an empty static <div> with no v-for and no reactive children. Empirical observation: SURVIVES without reinforcement — Vue's hydrator tolerates the unexpected child because the parent's vDOM expectation is 'empty children list' and the actual is 'one child', which Vue 3.5 in production builds accepts. This corrects an early prediction that all 'additive DOM' cases would recover. The actual fragile additive case is insertion into a v-for or stateful parent (see case 09). The reinforcement layer's annotator + companion remain belt-and-suspenders here.",
+  "ops": [
+    {
+      "type": "add",
+      "selector": "[data-edge-anchor='home-banner']",
+      "html": "<div class=\"card banner-promo\" id=\"edge-banner-04\" data-edge-region=\"banner\"><h3>Limited offer</h3><p>50% off the first month. Inserted at the edge.</p></div>",
+      "position": "append"
+    }
+  ],
+  "expected": {
+    "withoutReinforcement": "survives",
+    "withReinforcement":    "survives"
+  }
+}

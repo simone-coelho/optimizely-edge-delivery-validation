@@ -1,0 +1,213 @@
+<div id="lab-redesign" data-experiment-source="decomposition-pattern-test">
+  <style>
+    #lab-redesign {
+      max-width: 1100px;
+      margin: 0 auto 2rem;
+      padding: 2rem 1.5rem;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #1a1a1a;
+    }
+    #lab-redesign .lab-section { margin: 2.5rem 0; }
+    #lab-redesign .lab-section-title {
+      font-size: 1.75rem;
+      font-weight: 600;
+      margin: 0 0 1rem;
+      color: #1a1a1a;
+    }
+
+    /* Pricing tier preview */
+    #lab-redesign .lab-tier-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1rem;
+    }
+    #lab-redesign .lab-tier {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 1.5rem;
+      background: #fff;
+      position: relative;
+    }
+    #lab-redesign .lab-tier.lab-tier-featured {
+      border: 2px solid #2563eb;
+      box-shadow: 0 4px 8px rgba(37, 99, 235, 0.08);
+    }
+    #lab-redesign .lab-tier-pin {
+      position: absolute;
+      top: -10px;
+      right: 1rem;
+      background: #2563eb;
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+    }
+    #lab-redesign .lab-tier-name {
+      font-size: 1.125rem;
+      font-weight: 600;
+      margin: 0 0 0.5rem;
+    }
+    #lab-redesign .lab-tier-price {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin: 0.5rem 0 1rem;
+    }
+    #lab-redesign .lab-tier-list ul {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 1rem;
+    }
+    #lab-redesign .lab-tier-list ul li {
+      padding: 0.25rem 0;
+      color: #4b5563;
+      font-size: 0.875rem;
+    }
+    #lab-redesign .lab-cta {
+      display: inline-block;
+      background: #2563eb;
+      color: #fff;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.875rem;
+    }
+
+    /* FAQ accordion */
+    #lab-redesign .lab-faq-list {
+      border-top: 1px solid #e5e7eb;
+    }
+    #lab-redesign .lab-faq-item {
+      border-bottom: 1px solid #e5e7eb;
+    }
+    #lab-redesign .lab-faq-question {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      padding: 1rem 0;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: 500;
+      color: #1a1a1a;
+      text-align: left;
+    }
+    #lab-redesign .lab-faq-question::after {
+      content: '+';
+      font-size: 1.25rem;
+      color: #6b7280;
+    }
+    #lab-redesign .lab-faq-question.lab-active::after {
+      content: '−';
+    }
+    #lab-redesign .lab-faq-answer {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.2s ease-out;
+      color: #4b5563;
+      font-size: 0.9375rem;
+      line-height: 1.5;
+    }
+    #lab-redesign .lab-faq-question.lab-active + .lab-faq-answer {
+      max-height: 500px;
+      padding-bottom: 1rem;
+    }
+
+    /* Class-change reflection — when #pricing-page-title receives
+       the optly-redesign class via Change 2, this rule paints a
+       visible eyebrow label above the page heading so the test can
+       verify the class change applied. */
+    #pricing-page-title.optly-redesign {
+      border-top: 4px solid #2563eb;
+      padding-top: 1.5rem;
+      position: relative;
+    }
+    #pricing-page-title.optly-redesign::before {
+      content: 'Decomposition pattern test — redesign variant';
+      display: block;
+      color: #2563eb;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+    }
+  </style>
+
+  <!-- Pricing tier preview — mirrors Indeed's tier layout pattern -->
+  <section class="lab-section" data-edge-region="lab-pricing-preview">
+    <h2 class="lab-section-title">Plans (variant)</h2>
+    <div class="lab-tier-list">
+      <article class="lab-tier" data-tier-id="lab-free">
+        <div class="lab-tier-name">Free</div>
+        <div class="lab-tier-price">$0</div>
+        <ul>
+          <li>Up to 5 experiments</li>
+          <li>1 environment</li>
+          <li>Community support</li>
+        </ul>
+        <a class="lab-cta" href="/signup?plan=free">Start free</a>
+      </article>
+      <article class="lab-tier lab-tier-featured" data-tier-id="lab-pro">
+        <div class="lab-tier-pin">Popular</div>
+        <div class="lab-tier-name">Pro</div>
+        <div class="lab-tier-price">$49/mo</div>
+        <ul>
+          <li>Unlimited experiments</li>
+          <li>5 environments</li>
+          <li>Priority email support</li>
+        </ul>
+        <a class="lab-cta" href="/signup?plan=pro">Choose Pro</a>
+      </article>
+      <article class="lab-tier" data-tier-id="lab-enterprise">
+        <div class="lab-tier-name">Enterprise</div>
+        <div class="lab-tier-price">Custom</div>
+        <ul>
+          <li>SLA, SSO, audit logs</li>
+          <li>Dedicated success manager</li>
+          <li>Custom contract</li>
+        </ul>
+        <a class="lab-cta" href="/contact?plan=enterprise">Talk to sales</a>
+      </article>
+    </div>
+  </section>
+
+  <!-- FAQ accordion — mirrors Indeed's accordion pattern -->
+  <section class="lab-section" data-edge-region="lab-faq">
+    <h2 class="lab-section-title">Frequently asked questions</h2>
+    <div class="lab-faq-list">
+      <div class="lab-faq-item">
+        <button class="lab-faq-question" id="lab-faq-0">Can I cancel any time?</button>
+        <div class="lab-faq-answer" aria-labelledby="lab-faq-0">
+          Yes. All paid plans are month-to-month with no long-term contracts.
+          Cancel from your account settings and your service runs through the
+          end of the billing period.
+        </div>
+      </div>
+      <div class="lab-faq-item">
+        <button class="lab-faq-question" id="lab-faq-1">What payment methods are supported?</button>
+        <div class="lab-faq-answer" aria-labelledby="lab-faq-1">
+          We accept all major credit cards (Visa, Mastercard, AmEx), and for
+          Enterprise plans we can invoice via ACH or bank transfer.
+        </div>
+      </div>
+      <div class="lab-faq-item">
+        <button class="lab-faq-question" id="lab-faq-2">Is there an annual discount?</button>
+        <div class="lab-faq-answer" aria-labelledby="lab-faq-2">
+          Yes — Pro plans get 2 months free when billed annually. Enterprise
+          contracts are negotiated separately.
+        </div>
+      </div>
+      <div class="lab-faq-item">
+        <button class="lab-faq-question" id="lab-faq-3">Do you offer a free trial?</button>
+        <div class="lab-faq-answer" aria-labelledby="lab-faq-3">
+          The Free plan is unlimited in duration. To try the Pro plan, sign up
+          and you'll get a 14-day Pro trial automatically.
+        </div>
+      </div>
+    </div>
+  </section>
+</div>

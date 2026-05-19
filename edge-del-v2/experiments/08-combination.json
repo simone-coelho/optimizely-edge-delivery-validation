@@ -1,0 +1,20 @@
+{
+  "id": "08-combination",
+  "name": "Hybrid — text swap (safe) plus additive banner (fragile)",
+  "bucket": "mixed",
+  "pathMatch": "/",
+  "notes": "Text swap on the hero headline plus additive banner into the home-banner anchor. Both ops target safe patterns in this lab structure (static template text + empty anchor child-list). Empirical observation: SURVIVES without reinforcement. The mixed-scope test value of this case is preserved by the annotator and companion correctly handling both op types simultaneously — even though Vue happens to tolerate each individually here.",
+  "ops": [
+    { "type": "text", "selector": "#hero-headline", "value": "One platform. Many possibilities." },
+    {
+      "type": "add",
+      "selector": "[data-edge-anchor='home-banner']",
+      "html": "<div class=\"card banner-promo\" id=\"edge-banner-08\" data-edge-region=\"banner\"><h3>Hybrid variation</h3><p>Text edit + additive DOM, applied in one pass.</p></div>",
+      "position": "append"
+    }
+  ],
+  "expected": {
+    "withoutReinforcement": "survives",
+    "withReinforcement":    "survives"
+  }
+}

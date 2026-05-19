@@ -1,0 +1,647 @@
+import { getData, getSnippetUrl } from './data';
+import { CfEdgeRelay } from './relay';
+import { Inputs, Options, DevUrl, Environments } from './models';
+import { EnvironmentsEnum } from './enums';
+import {
+    getLogger,
+    Logger,
+    LogLevelToLower,
+    NameToLogLevelMap,
+    LogState,
+} from './edge-decider/logger';
+import * as cookie from 'cookie';
+import {
+    OptimizelyCookies,
+    OptimizelyQueryParams,
+} from './edge-decider/constants';
+import { getInputData } from './edge-decider/env';
+import { getScriptNonceFromHeader } from './utils';
+import { ScriptTagInjector } from './injectors';
+import { isWebhookRequest, handleWebhook } from './webhook';
+
+export type { Options as Options };
+
+const FALLBACK_OPTIONS = Object.freeze({
+    NULL: 'null',
+    SNIPPET: 'snippet',
+    ERROR: 'error',
+});
+
+const isDevEnv = (env: Environments) => env === EnvironmentsEnum.dev;
+
+function validateOptions(options: Options): [Options, string[]] {
+    const parsedOptions: Options = new Options(options);
+    let errors = [];
+
+    !options.environment?.trim() && errors.push('environment is required');
+    options.environment?.trim() !== EnvironmentsEnum.dev &&
+        options.environment?.trim() !== EnvironmentsEnum.prod &&
+        errors.push('environment should be dev or prod');
+
+    options.accountId && isNaN(options.accountId) && errors.push('accountId'); //only integers
+
+    if (options.accountId) {
+        parsedOptions.accountId = !isNaN(options.accountId)
+            ? Number(options.accountId)
+            : undefined;
+    }
+
+    options.snippetId &&
+        !validSnippetId(options.snippetId) &&
+        errors.push('snippetId'); //string or integer
+    parsedOptions.snippetId = options.snippetId;
+
+    options.kvNamespace &&
+        typeof options.kvNamespace.get !== 'function' &&
+        errors.push('kvNamespace');
+    parsedOptions.kvNamespace = options.kvNamespace;
+
+    options.isProd &&
+        typeof options.isProd !== 'boolean' &&
+        errors.push('isProd'); //only boolean
+    parsedOptions.isProd =
+        typeof options.isProd === 'boolean' ? options.isProd : true;
+    parsedOptions.isSnippetless =
+        typeof options.isSnippetless === 'boolean'
+            ? options.isSnippetless
+            : false;
+
+    options.nonce && typeof options.nonce !== 'string' && errors.push('nonce'); //only string
+    parsedOptions.nonce = options.nonce;
+    parsedOptions.position = options.position || 'top';
+    parsedOptions.cacheTTLs = options.cacheTTLs;
+    parsedOptions.deployId = options.deployId || '';
+    parsedOptions.fallback = options.fallback || '';
+    parsedOptions.existingSnippet = options.existingSnippet || '';
+
+    parsedOptions.control = options.control;
+    parsedOptions.rewriter = options.rewriter;
+    parsedOptions.environment = options.environment;
+    parsedOptions.fixCSPForOptimizely = options.fixCSPForOptimizely || false;
+
+    if (isDevEnv(options.environment)) {
+        parsedOptions.dev_protocol = options.dev_protocol?.trim() ?? 'https';
+        parsedOptions.dev_host = options.dev_host?.trim() ?? 'example.com';
+        parsedOptions.dev_port = options.dev_port?.trim();
+        parsedOptions.dev_pathname = options.dev_pathname?.trim();
+    }
+
+    isValidJSON(options.DATA) && errors.push('DATA'); //only valid JSON
+    parsedOptions.DATA = options.DATA;
+
+    // Default log level to 'error' if not provided
+    parsedOptions.logLevel = options.logLevel || 'error';
+    parsedOptions.useEdgeDeliverySnippet =
+        options.useEdgeDeliverySnippet || false;
+
+    return [parsedOptions, errors];
+}
+
+function validSnippetId(value: string | number): boolean {
+    return (
+        typeof value === 'string' ||
+        (typeof value === 'number' && !isNaN(value))
+    );
+}
+
+function isValidJSON(data: string): boolean {
+    try {
+        JSON.parse(data);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+function getDevUrl(localUrl: DevUrl, pathname: string | undefined) {
+    let url = '';
+    if (!localUrl?.dev_host?.trim()) {
+        return url;
+    }
+
+    if (localUrl.dev_protocol?.trim()) {
+        url = `${localUrl.dev_protocol?.trim()}://`;
+    }
+
+    if (localUrl.dev_host?.trim()) {
+        url += localUrl.dev_host?.trim();
+    }
+
+    if (!localUrl.dev_port?.trim()) {
+        url += '/';
+    }
+
+    if (localUrl.dev_port?.trim()) {
+        url += `:${localUrl.dev_port?.trim()}/`;
+    }
+
+    if (pathname?.trim()) {
+        url += `${pathname?.trim().slice(1)}`;
+    }
+
+    if (!pathname?.trim() && localUrl.dev_pathname) {
+        url += `${localUrl.dev_pathname}`;
+    }
+
+    return url;
+}
+
+function getTargetRequest(request: Request, edgeOptions: Options): Request {
+    let requestUrl = new URL(request.url);
+
+    if (isDevEnv(edgeOptions.environment)) {
+        const devUrl = {
+            dev_host: edgeOptions.dev_host,
+            dev_protocol: edgeOptions.dev_protocol,
+            dev_pathname: edgeOptions.dev_pathname,
+            dev_port: edgeOptions.dev_port,
+        };
+        const url = getDevUrl(devUrl, requestUrl.pathname);
+        const searchParams = requestUrl.searchParams;
+
+        requestUrl = new URL(url);
+        requestUrl.search = searchParams.toString();
+    }
+
+    return new Request(requestUrl, request);
+}
+
+async function getControl(
+    targetRequest: Request,
+    control: Response | undefined,
+    cacheTTL: number | undefined,
+    logger: Logger
+): Promise<Response> {
+    logger.debug('Control - Starting...');
+    if (control) {
+        logger.info('Control - Returning from option parameter');
+        return control as Response;
+    }
+
+    logger.debug('Control - Fetching from targetRequest...');
+
+    const fetchOptions: RequestInit = {
+        redirect: 'manual', // Ensure any 301, 302 responses are passed through.
+    };
+
+    if (typeof cacheTTL != 'undefined') {
+        logger.warning(
+            '[DEPRECATING] Control cache for origin is being deprecated.'
+        );
+        fetchOptions.cf = {
+            cacheTtl: cacheTTL,
+        };
+    }
+
+    const response: Response = await fetch(targetRequest, fetchOptions);
+
+    logger.debug('Control - ... completed. ');
+    logger.info(
+        'Control - Cache Status',
+        response.headers.get('cf-cache-status')
+    );
+
+    return response;
+}
+
+async function getWebManifestData(
+    options: Options,
+    logger: Logger
+): Promise<any> {
+    let DATA = options.DATA;
+
+    if (!DATA && options.kvNamespace && options.snippetId) {
+        try {
+            logger.info('Getting data from KV namespace');
+            const snippetName = options.accountId
+                ? `${options.accountId}/s/${options.snippetId.toString()}`
+                : options.snippetId.toString();
+            const data = await options.kvNamespace.get(snippetName);
+            DATA = data ? JSON.parse(data) : null;
+            logger.debug('Got data from KV:', DATA);
+        } catch (e) {
+            console.log(
+                'Error fetching or parsing JSON DATA from KV config',
+                e
+            );
+        }
+    }
+
+    if (!DATA) {
+        DATA = await getData(
+            options.accountId as number,
+            options.snippetId as string,
+            options.isProd,
+            options.cacheTTLs?.dataTTL,
+            logger
+        );
+    } else {
+        logger.info('Edge Rewriter - Getting DATA from option parameter.');
+    }
+
+    return DATA;
+}
+
+async function getRelay(
+    targetRequest: Request,
+    options: Options,
+    logger: Logger
+): Promise<CfEdgeRelay> {
+    logger.debug('Edge Rewriter - Starting...');
+
+    const inputs: Inputs = getInputData(targetRequest, logger);
+    logger.setBrowserLogLevel(inputs.logLevel as string);
+
+    const DATA = await getWebManifestData(options, logger);
+    const relay: CfEdgeRelay = new CfEdgeRelay(DATA, options, inputs, logger);
+
+    return relay;
+}
+
+/**
+ * This function is used to handle the flow when an error occurs.
+ * It will return the fetch request if isSnippetless is true.
+ * If fallback is error, it will throw an exception.
+ * Other case, it will return null to continue with the fallback strategy to show the error on the page.
+ * @param targetRequest
+ * @param isSnippetless
+ * @param fallback
+ * @param error
+ * */
+const handleFlowWhenError = ({
+    targetRequest,
+    isSnippetless,
+    fallback,
+    error,
+    control,
+}: {
+    targetRequest: Request;
+    isSnippetless: boolean;
+    fallback: string | undefined;
+    error: Error;
+    control?: Response;
+}) => {
+    if (isSnippetless) {
+        if (control) {
+            // if control is available, return control
+            return control;
+        }
+        return fetch(targetRequest);
+    }
+
+    if (fallback === FALLBACK_OPTIONS.ERROR) {
+        throw error;
+    }
+
+    return null;
+};
+
+/**
+ * This function is used to get the log level from the request.
+ * @param targetRequest
+ * @returns {number}
+ * */
+const getLogLevelFromRequest = (targetRequest: Request) => {
+    const requestUrl = new URL(targetRequest.url);
+    const logLevelKey: string =
+        requestUrl.searchParams.get(OptimizelyQueryParams.LOG) || '';
+
+    return NameToLogLevelMap[logLevelKey.toLowerCase()];
+};
+
+export async function applyExperiments(
+    request: Request,
+    context: ExecutionContext,
+    options: Options
+): Promise<Response> {
+    const logger = getLogger(context);
+
+    if (isWebhookRequest(request)) {
+        return await handleWebhook(request, options, logger);
+    }
+
+    // Normal experiment application flow
+    const [edgeOptions, errors] = validateOptions(options);
+    logger.setWorkerLogLevel(edgeOptions.logLevel as string);
+    logger.debug(
+        `Options validation completed. Executing on mode ${edgeOptions.environment}`
+    );
+
+    const targetRequest: Request = getTargetRequest(request, edgeOptions);
+
+    let hasErrors = errors.length > 0;
+
+    if (hasErrors) {
+        const errorMessage = `Invalid options provided, the following fields have errors: ${errors.join(', ')}`;
+        logger.error(errorMessage);
+
+        const responseWhenError = handleFlowWhenError({
+            targetRequest,
+            isSnippetless: Boolean(edgeOptions.isSnippetless),
+            fallback: edgeOptions.fallback,
+            error: new Error(errorMessage),
+            control: edgeOptions.control,
+        });
+
+        if (responseWhenError) {
+            return responseWhenError;
+        }
+    }
+
+    let control: Response | undefined = edgeOptions.control;
+    let relay: CfEdgeRelay | undefined = undefined;
+
+    const sideMode = checkSideMode(targetRequest);
+    const shouldTransformRewriter = !hasErrors && !sideMode;
+
+    // This is the normal flow, we will try to transform the rewriter
+    if (shouldTransformRewriter) {
+        try {
+            [control, relay] = await Promise.all([
+                getControl(
+                    targetRequest,
+                    control,
+                    edgeOptions.cacheTTLs?.targetTTL,
+                    logger
+                ),
+                getRelay(targetRequest, edgeOptions, logger),
+            ]);
+
+            edgeOptions.nonce =
+                edgeOptions.nonce ||
+                getScriptNonceFromHeader(
+                    control.headers.get('Content-Security-Policy')
+                );
+
+            // Process any Set-Cookie headers from the control response
+            const setCookieHeaders = control.headers.getAll('set-cookie');
+            relay.updateInputsWithOriginCookies(setCookieHeaders);
+            if (edgeOptions.fixCSPForOptimizely) {
+                relay.addOptimizelyCSPRequirements(
+                    control.headers.get('Content-Security-Policy')
+                );
+            }
+
+            if (relay.validateVisitorId()) {
+                // Evaluate all relevant Views and Audiences
+                // And determine the current unappliedChangesets (transforms)
+                await relay.decide(context);
+            } else {
+                logger.warning(
+                    'The visitorIdLocator type is not supported in the Edge Relay.  Not deciding on the edge.'
+                );
+            }
+
+            const rewriter: HTMLRewriter | undefined =
+                edgeOptions.rewriter || new HTMLRewriter();
+
+            // Apply all decided transforms that can be applied presently
+            relay.applyTransforms(rewriter, edgeOptions.existingSnippet);
+
+            const newHeaders = relay.getAdditionalHeaders();
+
+            // Compile the Javascript necessary for executing any remaining functionality on the browser
+            if (!edgeOptions.isSnippetless) {
+                await relay.applyBrowserJs(
+                    rewriter,
+                    edgeOptions.cacheTTLs?.browserTTL,
+                    edgeOptions.position,
+                    edgeOptions.nonce,
+                    edgeOptions.isProd,
+                    edgeOptions.useEdgeDeliverySnippet
+                );
+            }
+
+            // Add additional headers to the control response
+            const headers = new Headers(control.headers);
+            newHeaders.forEach((value, key) => {
+                if (key.toLowerCase() === 'set-cookie') {
+                    headers.append(key, value);
+                } else {
+                    headers.set(key, value);
+                }
+            });
+            return rewriter.transform(
+                new Response(control?.body, {
+                    ...control,
+                    status: control.status,
+                    statusText: control.statusText,
+                    headers: headers,
+                })
+            );
+        } catch (e: unknown) {
+            const error = e as Error;
+            const errorMessage = `An error occurred, using fallback strategy: ${edgeOptions.fallback}. Error Details: ${error.message}`;
+
+            logger.error(error.stack || '');
+            logger.error(errorMessage);
+
+            const responseWhenError = handleFlowWhenError({
+                targetRequest,
+                isSnippetless: Boolean(edgeOptions.isSnippetless),
+                fallback: edgeOptions.fallback,
+                error,
+                control: edgeOptions.control,
+            });
+
+            if (responseWhenError) {
+                return responseWhenError;
+            }
+
+            // We need to handle errors in the fallback strategy
+            hasErrors = true;
+        }
+    }
+
+    // Transforming the rewrite was not possible, then we need to apply the fallback strategy.
+    // Note: The fallback error handling is already managed in the handleFlowWhenError function above.
+
+    // Ensure control response is available by calling getControl if not already obtained
+    const newControl = await getControl(
+        targetRequest,
+        control,
+        edgeOptions.cacheTTLs?.targetTTL,
+        logger
+    );
+
+    edgeOptions.nonce =
+        edgeOptions.nonce ||
+        getScriptNonceFromHeader(
+            newControl.headers.get('Content-Security-Policy')
+        );
+
+    const logLevel = getLogLevelFromRequest(targetRequest);
+    logger.setBrowserLogLevel(logLevel);
+
+    let shouldInjectSnippetLogs: boolean = Boolean(hasErrors && logLevel);
+
+    //0. Check new MFE editor mode
+    if (sideMode == 'mfeEditorMode') {
+        logger.debug('Returning control with snippet injected for MFE editor.');
+
+        const cookies = cookie.parse(targetRequest.headers.get('Cookie') || '');
+        const useLocalBundle = cookies['useLocalBundle'] === 'true';
+
+        // Should define the mfe url from a constant or from localbundle
+        const mfeUrl = useLocalBundle
+            ? 'http://localhost:9888/main.js'
+            : 'https://app.optimizely.com/dist/visual-editor/main.js';
+
+        const snippetRewriter: HTMLRewriter =
+            edgeOptions.rewriter || new HTMLRewriter();
+        snippetRewriter.on(
+            'head',
+            new ScriptTagInjector(mfeUrl, 'append', edgeOptions.nonce)
+        );
+
+        return snippetRewriter.transform(newControl);
+    }
+
+    //1. fallback snippet or editMode, return control with snippet injected
+    if (edgeOptions.fallback === FALLBACK_OPTIONS.SNIPPET || sideMode) {
+        if (edgeOptions.snippetId) {
+            logger.debug('Attempting to return snippet injected page');
+
+            const transformed = injectSnippet(edgeOptions, newControl, logger);
+            return shouldInjectSnippetLogs
+                ? injectSnippetLogs(transformed, edgeOptions, logger)
+                : transformed;
+        }
+
+        logger.debug('SnippetId is required to inject snippet');
+        shouldInjectSnippetLogs = Boolean(logLevel);
+    }
+
+    //2. fallback null, return control with snippetLogs injected on the page
+    if (shouldInjectSnippetLogs) {
+        // Returning control with logs
+        return injectSnippetLogs(newControl, edgeOptions, logger);
+    }
+
+    //3. fallback null, return control without logs
+    if (control) {
+        logger.info('Returning Control');
+        return control;
+    }
+
+    //4. If nothing worked before, return fetch request
+    logger.info('Returning fetch request');
+    return fetch(targetRequest);
+}
+
+function injectSnippet(edgeOptions: any, control: any, logger: any): any {
+    const configUrl = getSnippetUrl(
+        edgeOptions.accountId,
+        edgeOptions.snippetId,
+        edgeOptions.isProd
+    );
+
+    logger.debug(`Generated url: ${configUrl}`);
+
+    const snippetRewriter: HTMLRewriter =
+        edgeOptions.rewriter || new HTMLRewriter();
+    snippetRewriter.on(
+        'head',
+        new ScriptTagInjector(configUrl, 'append', edgeOptions.nonce)
+    );
+
+    logger.info('Successfully injected snippet on page');
+    logger.info('Returning transformed page');
+    return snippetRewriter.transform(control);
+}
+
+/**
+ * This function is used to generate the script content to show logs on the page
+ * @param logs
+ * @returns {string}
+ */
+function getScriptContent(logs: LogState['logs']): string {
+    const logsMap = (log: LogState['logs'][0]) =>
+        `console.${LogLevelToLower[log.level]}('${log.message}');`;
+
+    const consoleLogs = logs.map(logsMap);
+
+    return `console.group('Logs from Edge:');${consoleLogs.join('')}console.groupEnd();`;
+}
+
+/**
+ * Injects the snippetLogs on the page to show logs on the browser console
+ * @param control
+ * @param edgeOptions
+ * @param logger
+ * @returns {Promise<any>}
+ */
+async function injectSnippetLogs(
+    control: Response,
+    edgeOptions: Options,
+    logger: Logger
+): Promise<any> {
+    logger.debug('Attempting to return snippetLogs injected on the page');
+
+    const scriptContent = getScriptContent(logger.getLogs());
+
+    const snippetRewriter: HTMLRewriter =
+        edgeOptions.rewriter || new HTMLRewriter();
+
+    snippetRewriter.on(
+        'head',
+        new ScriptTagInjector(scriptContent, 'append', edgeOptions.nonce)
+    );
+
+    logger.info('Successfully injected snippet on page to show logs');
+    logger.info('Returning transformed page');
+
+    return snippetRewriter.transform(control);
+}
+
+function getRequestParameters(targetRequest: Request): URLSearchParams {
+    let targetPageURLString = targetRequest.url;
+    let targetPageURL: URL | null;
+    try {
+        targetPageURL = targetPageURLString
+            ? new URL(targetPageURLString)
+            : null;
+    } catch (e) {
+        // This is the only type of error URL constructor should throw: https://developer.mozilla.org/en-US/docs/Web/API/URL/URL#Syntax
+        if (e instanceof TypeError) {
+            throw new Error(
+                `[EDGE DELIVERY] Target page URL is not a valid URL string: ${targetPageURLString}`
+            );
+        }
+        throw e;
+    }
+    if (!targetPageURL) {
+        throw new Error('[EDGE DELIVERY] Target page URL is null.');
+    }
+
+    const requestUrl = new URL(targetPageURLString);
+    return requestUrl.searchParams;
+}
+
+function checkSideMode(targetRequest: Request): string | null {
+    const cookies = cookie.parse(targetRequest.headers.get('Cookie') || '');
+    const requestParams = getRequestParameters(targetRequest);
+
+    if (
+        cookies[OptimizelyCookies.OPTIMIZELY_TOKEN] ||
+        !!requestParams.get('optimizely_token')
+    ) {
+        //preview mode
+        return 'previewMode';
+    }
+
+    if (
+        cookies[OptimizelyCookies.OPTIMIZEY_MFE_EDITOR] ||
+        requestParams.get('optimizely_embed_editor')?.toLowerCase() === 'true'
+    ) {
+        //edit mode on new MFE
+        return 'mfeEditorMode';
+    }
+
+    if (!!requestParams.get('optimizely_p13n')) {
+        //edit mode
+        return 'editMode';
+    }
+
+    return null;
+}

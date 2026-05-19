@@ -1,0 +1,19 @@
+{
+  "id": "05-rearrange-unkeyed",
+  "name": "Rearrange items in an unkeyed v-for (feature grid)",
+  "bucket": "fragile",
+  "pathMatch": "/features",
+  "notes": "The feature grid uses v-for WITHOUT :key intentionally (FeatureGrid.vue). Vue's diff treats reordered unkeyed nodes as new and remounts them by index — which means our edge-applied DOM reorder is reset against the original `features` array. Annotator scopes data-allow-mismatch='children' on the parent grid; the companion re-moves post-hydration.",
+  "ops": [
+    {
+      "type": "move",
+      "selector":   "[data-edge-region='feature-grid'] > article:first-child",
+      "toSelector": "[data-edge-region='feature-grid']",
+      "position":   "append"
+    }
+  ],
+  "expected": {
+    "withoutReinforcement": "recovered",
+    "withReinforcement":    "survives"
+  }
+}

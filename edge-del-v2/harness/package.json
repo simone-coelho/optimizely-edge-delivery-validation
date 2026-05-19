@@ -1,0 +1,22 @@
+{
+  "name": "edge-del-v2-harness",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Playwright-based hydration validation harness for the Edge Delivery lab",
+  "type": "module",
+  "scripts": {
+    "run": "tsx run.ts",
+    "run:all": "tsx run.ts --all",
+    "install-browsers": "playwright install --with-deps chromium",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "playwright": "^1.60.0"
+  },
+  "devDependencies": {
+    "edge-del-v2-reinforce": "*",
+    "tsx": "^4.20.0",
+    "typescript": "^5.4.0",
+    "@types/node": "^22.0.0"
+  }
+}

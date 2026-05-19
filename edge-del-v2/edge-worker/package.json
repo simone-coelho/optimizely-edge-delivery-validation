@@ -1,0 +1,23 @@
+{
+  "name": "edge-del-v2-worker",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Cloudflare Worker — Optimizely Edge Delivery + reinforcement annotator + companion injector",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --env dev",
+    "deploy": "wrangler deploy --env prod",
+    "deploy:dev": "wrangler deploy --env dev",
+    "cf-typegen": "wrangler types",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@optimizely/edge-delivery": "^1.0.10",
+    "edge-del-v2-reinforce": "*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240502.0",
+    "typescript": "^5.4.0",
+    "wrangler": "^4.0.0"
+  }
+}

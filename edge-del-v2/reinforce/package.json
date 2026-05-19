@@ -1,0 +1,33 @@
+{
+  "name": "edge-del-v2-reinforce",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Reinforcement layer — post-hydration variation re-applier (companion) and shared types",
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.ts"
+    },
+    "./companion-source": {
+      "import": "./dist/companion-source.mjs",
+      "types": "./dist/companion-source.d.ts"
+    },
+    "./companion.min.js": "./dist/companion.min.js"
+  },
+  "files": [
+    "dist/",
+    "src/"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0",
+    "typescript": "^5.4.0"
+  }
+}

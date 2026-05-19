@@ -1,0 +1,170 @@
+
+OPTIMIZELY  ·  ENTERPRISE ARCHITECTURE GUIDANCE
+Web Experimentation: Variation Execution Timing and Delivery Mode Guidance
+A reference document for the GitLab experimentation team
+PREPARED FOR
+GitLabPREPARED BY
+Simone Araujo CoelhoAUDIENCE
+Frontend Engineering & Experimentation TeamROLE
+Managing Principal Enterprise Architect, OptimizelyDATE
+April 2026DOCUMENT STATUS
+Guidance — Internal collaboration
+Purpose
+This document provides Optimizely's recommended guidance on two areas raised by the GitLab team during recent collaboration. The first concerns variation execution timing within Web Experimentation — specifically, the order in which Visual Editor changes and Custom Code blocks execute, and the recommended pattern when Custom Code must run after Visual Editor changes have settled in the DOM. The second is broader and concerns delivery mode selection — the conditions under which Edge Delivery is the appropriate choice versus standard client-side Web Experimentation, including the specific implications of running Edge Delivery against pages built on a Vue and Nuxt server-side rendered architecture.
+The intent is to provide both an immediate technical resolution for the variation timing question and a broader framework to support delivery mode selection on a per-experiment basis. Both delivery modes are part of the Optimizely Web Experimentation product family and are intended to operate together. With deliberate routing of experiments to the appropriate mode, the friction observed to date is expected to subside.
+Part 1 — Execution Order Within a Variation
+Default Synchronous Execution Order
+Within a single Web Experimentation variation, code and changes execute in the following synchronous order:
+1. Project JavaScript
+2. Campaign JavaScript
+3. Campaign CSS
+4. Experiment JavaScript (Custom Code block)
+5. Experiment CSS
+6. Visual Editor changes
+An important implication: by default, the Custom Code block executes before Visual Editor changes are applied. Custom Code is also executed immediately as written, frequently before the DOM is ready. This represents a deliberate change from Optimizely Classic, in which each line was auto-polled. Web Experimentation removed this behavior to provide developers with explicit timing control.
+By contrast, each Visual Editor change is applied when its target selector becomes available in the DOM. Visual Editor changes are inherently DOM-aware; Custom Code is not. This distinction is the source of the timing issue commonly encountered when Custom Code targets an element without an explicit wait, since the Custom Code will execute before the element is present in the document.
+Built-in Sequencing Mechanisms
+Web Experimentation provides two timing mechanisms within a variation, although neither directly creates a dependency in which a Custom Code block waits for Visual Editor changes to complete:
+Wait-for-previous-change toggle. This option is available on each Visual Editor change in the Timing panel of the new Visual Editor. It sequences Visual Editor changes against one another — each change can be configured to wait for the change immediately preceding it in the change list. This option is appropriate when one Visual Editor change depends on another but does not couple Visual Editor changes to Custom Code blocks.
+Synchronous Timing dropdown. This option is available in the Variation Code Editor for Custom Code. It controls whether the Custom Code loads synchronously with the snippet or asynchronously afterward. It is a load-timing control rather than a dependency on a Visual Editor change completing.
+The Experience Templates and Extensions architecture provides additional flexibility — an extension's Apply JS can be authored to wait for another extension, and a Visual Editor change positioned after an extension in the change list will wait for that extension. Even so, this architecture does not provide a clean Custom-Code-after-Visual-Editor-change path that fits the typical implementation workflow.
+Recommended Pattern: Marker Class with waitForElement
+For scenarios in which Custom Code must execute after Visual Editor changes have settled, Optimizely recommends an explicit marker pattern. The Visual Editor change introduces a marker into the DOM, and the Custom Code block waits for that marker before proceeding.
+The pattern consists of two steps:
+1. Within the Visual Editor change, add a marker class or data attribute as part of the change. This may be done by editing the element's class list, by using Edit HTML to introduce a wrapper or attribute, or by including the marker as a styles or attributes change.
+2. Within the Custom Code block, use utils.waitForElement to wait for the marker. When the Visual Editor change is applied, the marker is added to the DOM and the waitForElement promise resolves.
+An illustrative example, based on a typical anchor-tag tracking scenario:
+var utils = window.optimizely.get('utils');
+ 
+// Wait for the marker class introduced by the Visual Editor change
+utils.waitForElement('.promo-card__button.opt-vchange-applied').then(function (el) {
+  el.setAttribute('data-ga-name', 'free trial');
+});
+This approach is reliable because Visual Editor changes are applied when their target selector becomes available in the DOM. Once the change has been applied, the marker class is present, and waitForElement resolves deterministically. The pattern provides a dependable signal that the Visual Editor change has settled without requiring a built-in dependency mechanism.
+An additional benefit of this approach is that it preserves the collaboration model commonly used within experimentation teams, in which a designer or product manager configures the visual change in the Visual Editor and an engineer adds supporting behavior in Custom Code. The original Visual Editor changes remain intact and editable by non-developers, while the Custom Code adds tracking, attribute changes, or behavior reliably afterward.
+When to Consolidate into a Single Custom Code Block
+Consolidating all variation logic into a single Custom Code block is a valid alternative, particularly under the following circumstances:
+• The logic is tightly coupled and the visual presentation cannot be cleanly separated from the behavior.
+• The team building the experiment is engineering-led and does not require a WYSIWYG workflow.
+• Multiple manipulations must be ordered in a way that is difficult to express through Visual Editor change ordering alone.
+Consolidation does, however, carry tradeoffs that should be considered before adopting it as a default. The collaboration benefit for non-developer contributors is lost; Visual Editor changes are non-destructive and reorderable from the change list, whereas consolidated Custom Code is an all-or-nothing edit; and Visual Editor changes are stored in a structured JSON change list, which is easier to audit and QA than ad hoc imperative code.
+Optimizely's recommendation is that the marker pattern serve as the default, since it preserves the collaborative workflow. Consolidation should be reserved for cases in which the marker pattern does not fit cleanly.
+Part 2 — Choosing Between Edge Delivery and Client-Side Web Experimentation
+The execution model described in Part 1 applies to client-side execution — the snippet running in the browser and manipulating the DOM at runtime. Edge Delivery operates on a fundamentally different model, and a clear understanding of this distinction is the most important factor in delivery mode selection. In Optimizely's experience, the majority of friction encountered with Edge Delivery originates from a mismatch between an experiment's requirements and the delivery mode's capabilities, rather than from any defect in the delivery mode itself.
+How Edge Delivery Works
+With Edge Delivery, variation changes are applied at the CDN edge as the HTML response is generated. By the time the HTML reaches the browser, the variation has already been applied to the markup. The browser receives the variation as if it were the original page, with no client-side mutation step required.
+Strengths:
+• No flash of original content. Variations are present from first paint.
+• Improved Core Web Vitals — there is no client-side JavaScript timing penalty for the variation itself.
+• SEO-friendly. Search engines see fully rendered variations.
+• Lower client-side runtime overhead.
+Constraints:
+• The variation is determined at request time, before any client-side state is available.
+• Audience targeting must rely on signals available at the edge: HTTP headers, server-set cookies, geo, query parameters, URL paths, device type, and similar request-level inputs.
+• Because the change is already in the HTML, client-side timing constructs (waitForElement, observers) are not relevant — there is no asynchronous element to wait for.
+How Client-Side Web Experimentation Works
+The standard Web Experimentation snippet executes in the browser, evaluates audiences using both server- and client-side signals, and mutates the DOM as the page loads or after it has loaded.
+Strengths:
+• Audience targeting can use any client-side signal: dataLayer values, JavaScript-set cookies, logged-in state, third-party tag data, behavioral signals, and cohorts from external tools.
+• Can react to interactions, hydration events, and post-load state.
+• waitForElement and the timing patterns described in Part 1 are available.
+• Can target dynamically rendered or hydrated content that does not exist in the initial HTML response.
+Constraints:
+• Risk of flicker if synchronous timing is not configured correctly.
+• Runtime cost on the client.
+• Requires careful timing in single-page application and hydration-heavy scenarios.
+Decision Framework
+The recommended framing is not Edge Delivery versus client-side as an either/or platform decision, but rather a per-experiment choice based on the experiment's requirements. The following framework has proven effective across enterprise customers.
+Edge Delivery is the appropriate choice when:
+• The change is applied to server-rendered or static HTML that is delivered from the origin or CDN.
+• Audience criteria are entirely determinable from request-time signals (geo, URL parameters, server-set cookies, headers, device).
+• The experiment does not depend on client-side state or post-load events.
+• Performance and SEO sensitivity are high — typically above-the-fold marketing pages, hero copy and imagery, and landing page tests.
+• The change is a content swap, layout adjustment, or styling change applied against existing markup.
+Client-side Web Experimentation is the appropriate choice when:
+• Targets are hydrated or dynamically rendered after page load.
+• Audience criteria depend on client-side signals: logged-in state from JavaScript, dataLayer values, behavioral data, cohorts from external A/B tools, or third-party data layers.
+• The experiment involves interactive triggers — clicks, scroll, hover, or time-on-page.
+• The change must coordinate with other client-side scripts or wait for runtime conditions.
+• The experiment requires waitForElement patterns, MutationObserver, or post-event hooks.
+• The change targets elements that do not exist in the initial HTML response.
+Hybrid scenarios
+Some experiments exhibit characteristics of both modes. A common pattern is to run the visual change at the edge — capturing the no-flicker benefit on content already present in the HTML — and to run a small client-side companion experiment for tracking attributes, dynamic event handlers, or interactive elements that depend on hydration. Both delivery modes can coexist within a single testing program.
+Audience Targeting: The Practical Distinction
+Audience targeting is where the practical differences between the two delivery modes are most apparent, and it frequently determines the appropriate delivery mode independently of the change content. With Edge Delivery, audience evaluation occurs at the CDN before any client-side JavaScript executes. If an audience definition depends on any of the following:
+• A cookie set by client-side JavaScript on a previous visit.
+• A dataLayer value populated by a tag manager.
+• A third-party data point loaded after page render.
+• User behavior signals such as scroll depth or time on page.
+…then those signals are not available at edge evaluation time, and the experiment must be executed client-side. Conversely, audiences based on geography, URL parameters, server-set cookies, device type, and similar request-level inputs are well suited to Edge Delivery.
+A useful exercise is to audit active and planned experiments by audience definition, grouping them into request-time-determinable versus client-side-required. The first group routes naturally to Edge Delivery; the second routes to standard Web Experimentation. This single dimension frequently clarifies the delivery mode decision more directly than the change type does.
+Part 3 — Hydration and SSR Frameworks: A Special Case for Edge Delivery
+A second factor that determines Edge Delivery's fit, beyond audience signal availability, is hydration. This consideration is particularly relevant to GitLab's marketing properties, given the framework architecture observed during Optimizely's review of the publicly available about-gitlab-com repository: Vue 3 (with Vue 3.5 or later in use, evidenced by the data-allow-mismatch attribute referenced in earlier correspondence), running under Nuxt with server-rendered or pre-rendered output. The same considerations apply broadly across other Vue and Nuxt properties within the GitLab estate.
+How Hydration Interacts with Edge Delivery
+In Vue and similar SSR frameworks, pages are rendered to HTML on the server or at build time and then hydrated on the client. Hydration is the process by which the client-side framework attaches to the existing HTML, walks the DOM, and reconciles each node against the virtual DOM tree it expects to find. When the actual DOM matches the framework's expectations, hydration is fast and seamless. When it does not, Vue logs a hydration mismatch, attempts to recover by discarding unexpected nodes and mounting what it expected to find, and continues.
+This recovery is largely invisible to the end user but carries two costs that are material to experimentation. The first is a measurable rendering performance penalty, since incorrect nodes are torn down and replaced. The second is the risk that the framework's recovery undoes the change Edge Delivery applied at the CDN. The HTML that left the edge contained the variation, but the Vue runtime detected a discrepancy with its virtual DOM tree and corrected the page back toward what the client-side application expected.
+This dynamic is the technical root of the pattern reported in earlier correspondence — namely, that some experiments behave better than others, and that adding elements to the DOM presents more difficulty than rearranging or deleting them. The observation is consistent with how Vue's hydration walks the DOM and recovers from a mismatch: nodes that Vue does not expect tend to be discarded during recovery, whereas missing or reordered nodes are typically handled more gracefully by Vue's diffing algorithm, particularly when keyed elements are in use.
+Change-Type Sensitivity on Hydrated Pages
+For Edge Delivery on a Vue and Nuxt SSR page, not all change types are equivalent. Some change types hydrate cleanly, while others reliably produce mismatches that Vue will attempt to undo.
+Generally safe at the edge — Vue will typically hydrate cleanly:
+• Text content changes within existing elements.
+• Attribute changes — class, style, data-attributes, href, src, and alt.
+• Image src or alt swaps on existing img elements.
+• CSS-driven visibility changes, such as toggling display via class additions rather than removing nodes from the DOM.
+More fragile at the edge — likely to trigger hydration recovery:
+• Adding new DOM elements. Vue's hydration will encounter elements with no corresponding virtual node and may discard them as part of recovery.
+• Deleting elements where the parent component still expects to render them. Vue may re-create what it expected, undoing the change.
+• Rearranging elements that are not keyed. Without keys, Vue's diff may treat reordered nodes as new and remount them.
+• Any change to a subtree containing stateful child components, since each component carries its own hydration expectations.
+The empirical pattern reported by the GitLab team — that additive changes are the most problematic, with rearrangement and deletion behaving more reliably — is consistent with Vue's recovery behavior in practice. Vue tends to be more permissive when it can simply re-create a missing piece than when it must reconcile unexpected siblings.
+Tactical Workaround: data-allow-mismatch (Vue 3.5 and Later)
+Vue 3.5 introduced the data-allow-mismatch attribute, which marks a subtree as exempt from hydration mismatch warnings and instructs Vue to leave the existing DOM in place rather than aggressively recovering. This is the mechanism referenced in earlier correspondence.
+Permitted values:
+• text — allow text content mismatch.
+• children — allow direct children mismatch.
+• class — allow class attribute mismatch.
+• style — allow style attribute mismatch.
+• attribute — allow arbitrary attribute mismatch.
+• (no value) — allow all types of mismatches.
+Conditions under which data-allow-mismatch is appropriate:
+• The change is a text or attribute mismatch on a stable, contained subtree.
+• Post-hydration behavior has been validated and no downstream logic depends on the original value.
+• The cost of running the experiment client-side (potential flicker, lost performance benefit) outweighs the cost of suppressing a known mismatch.
+Conditions under which it should be avoided:
+• The change adds or removes meaningful DOM structure.
+• The change targets a subtree containing stateful or hydration-sensitive components.
+• Suppressing the mismatch could mask future regressions in code changes to the same area.
+In practical terms, data-allow-mismatch should be regarded as a useful escape hatch in cases where Edge Delivery is the appropriate choice for performance reasons but a small mismatch is unavoidable. It is not a strategic answer for additive or structural changes, which are better executed client-side after hydration completes.
+Decision Rule for Edge Delivery on Vue and Nuxt SSR Pages
+Combining the change-type sensitivity above with the audience and interaction considerations from Part 2, Optimizely recommends the following practical decision rule for the GitLab stack.
+Run at the edge when:
+• The experiment is a text, attribute, image, or CSS-class change on an existing server-rendered element.
+• The audience is determinable from request-time signals (geo, URL, server-set cookies, headers).
+• Performance and absence of flicker are high-priority requirements, typically for above-the-fold marketing content.
+Run client-side after hydration when:
+• The experiment adds new DOM elements or significantly restructures the page.
+• The change targets a content area generated dynamically by Vue components on the client.
+• The audience depends on client-side state.
+• The experiment requires interactivity, hydration-dependent components, or post-load behavior.
+Use a hybrid approach when:
+• The experiment combines safe and unsafe change types — execute the safe portion at the edge for the no-flicker benefit, and the unsafe portion as a client-side companion.
+• For example, render a hero copy variant at the edge as a text change (hydration-safe) and add a tracking attribute or interactive element via a small client-side experiment that runs after hydration.
+Repository Review Conducted by Optimizely
+Given that the GitLab team confirmed the about-gitlab-com repository and related properties are publicly accessible, Optimizely conducted a preliminary review of the codebase to confirm the framework architecture and to ground the guidance in this document in observed implementation patterns rather than assumption. The review confirmed the use of Vue 3 under Nuxt with server-side rendering or pre-rendering, which is consistent with the recommendations provided herein.
+Optimizely is prepared to conduct a more detailed code-level review at the GitLab team's discretion. A deeper review would identify which routes and components are server-rendered versus rendered client-only, which subtrees rely on stateful Vue components, and where the boundaries lie for safely targeting Edge Delivery changes. The output of such a review would be a route- and component-level map that supports experiment-by-experiment delivery mode routing decisions, rather than relying on the framework presented above to be applied without contextual reference.
+Part 4 — Confidence Statement on Edge Delivery
+Based on Optimizely's internal testing against the GitLab properties, the review of the publicly available repository, and the technical considerations set out above, there is no evidence that Edge Delivery is unreliable on the page types where it is appropriately applied. The behavior observed is consistent with documented expectations on both sides of the integration: Optimizely's Edge Delivery applies the configured changes cleanly at the CDN, and Vue's hydration behaves precisely as the framework documents when the resulting DOM does not match its virtual DOM tree. The friction that has been encountered occurs at the boundary between the two systems, and it is predictable rather than indicative of a defect.
+The recommendation, therefore, is not to step away from Edge Delivery but to be deliberate about the experiments that are routed to it. Edge Delivery remains a strong fit for many of the experiment classes within the GitLab program — in particular, text, attribute, and CSS-class changes on above-the-fold marketing content, where flicker and SEO are material concerns. Standard client-side Web Experimentation remains the appropriate choice for additive DOM changes, hydration-sensitive content, audiences requiring client-side signals, and interactive experiments. Under this routing approach, both delivery modes can coexist productively in the testing program, and the hydration errors observed to date are expected to subside materially.
+Optimizely is available to conduct a focused working session that combines two activities: a structured walkthrough of the framework above against current and planned experiments, and a code-level review of the publicly available repository to map routes and components to delivery modes. This combined session has consistently been the most efficient approach to translating guidance of this type into concrete routing decisions and to retiring the broader perception that Edge Delivery is unpredictable.
+Recommendations and Next Steps
+1. Variation execution timing. Adopt the marker class with waitForElement pattern described in Part 1 as the team's standard approach for cases in which Custom Code must execute after Visual Editor changes have been applied. This approach preserves the established collaboration workflow between non-developer and developer contributors and avoids the need to consolidate all variation logic into Custom Code.
+2. Experiment planning. Apply the decision framework presented in Part 2 to each experiment by evaluating audience signals, change targets, and interaction requirements, and route accordingly to Edge Delivery or client-side Web Experimentation. Both delivery modes are valid; the routing question is per-experiment rather than program-wide.
+3. Audience targeting audit. Audit audience definitions across active and planned experiments and identify those that depend on client-side signals. Such experiments are not supportable at the edge and should be routed to client-side regardless of the change content involved.
+4. Vue and Nuxt SSR change-type classification. For experiments executed on the GitLab marketing properties, classify each by change type. Text, attribute, image, and CSS-class changes on existing elements are generally safe at the edge. Additive DOM changes, structural rearrangements without keyed elements, and changes inside stateful component subtrees should default to client-side execution after hydration. The data-allow-mismatch attribute should be reserved for narrow, validated cases in which it is the most appropriate option.
+5. Code-level review session. Given the public availability of the repository and the breadth of properties involved, an experiment-by-experiment routing review combined with a targeted code-level walkthrough is likely to be the most efficient mechanism for translating this guidance into operational routing decisions. Optimizely is prepared to conduct this session at the GitLab team's convenience.
+6. Continued case-based collaboration. Continued sharing of specific experiment scenarios — including the variation timing example previously discussed and the broader hydration observations — supports Optimizely's ability to validate approach and identify edge cases that warrant further refinement.
+Optimizely is available to walk through specific experiment plans and to validate delivery mode selection and implementation approach. Please reach out at any point to schedule a session or to surface additional cases.
+OPTIMIZELY  ·  GITLAB ENGAGEMENT
+
+Variation Execution Timing & Delivery Mode Guidance	Page 1
+

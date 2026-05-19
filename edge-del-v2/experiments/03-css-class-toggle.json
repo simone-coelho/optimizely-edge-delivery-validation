@@ -1,0 +1,15 @@
+{
+  "id": "03-css-class-toggle",
+  "name": "CSS-class toggle on hero region",
+  "bucket": "safe",
+  "pathMatch": "/",
+  "notes": "Toggle a class + add an inline style on an element with static class/style in the template. Empirical observation: SURVIVES without reinforcement — Vue's hydration treats the class list and style attribute as static-template values when no reactive binding exists. The guidance's 'CSS-driven visibility changes' line is corroborated, and the empirical scope is broader: any non-reactive class edit is edge-safe.",
+  "ops": [
+    { "type": "class", "selector": ".hero", "add": ["hero-variant-bold"], "remove": [] },
+    { "type": "attribute", "selector": ".hero", "name": "style", "value": "background:linear-gradient(180deg,#eef2ff,transparent);" }
+  ],
+  "expected": {
+    "withoutReinforcement": "survives",
+    "withReinforcement":    "survives"
+  }
+}

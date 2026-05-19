@@ -1,0 +1,17 @@
+{
+  "id": "07-stateful-subtree",
+  "name": "Edits inside a stateful child component (counter)",
+  "bucket": "fragile",
+  "pathMatch": "/about",
+  "notes": "Edits inside StatefulCounter — a child component with its own state (count ref, computed label). The guidance treated 'stateful subtree' as uniformly fragile. Empirical observation refines this: the true boundary is REACTIVITY, not statefulness. Static template content inside the component (h3, button attrs/classes) survives without reinforcement. Reactive bindings ({{ label }}, which is a computed) are recovered because Vue re-renders them post-mount to match the computed's current value. Reinforcement re-applies the reactive op after mount — but the customer should know that reactive bindings are the actual fragile surface, not 'stateful' subtrees generally.",
+  "ops": [
+    { "type": "text",      "selector": "#counter-headline", "value": "Stateful counter — variant" },
+    { "type": "text",      "selector": "#counter-label",    "value": "Edge-applied initial label" },
+    { "type": "attribute", "selector": "#counter-button",   "name": "data-track", "value": "expt-bump" },
+    { "type": "class",     "selector": "#counter-button",   "add": ["counter-cta-variant"], "remove": [] }
+  ],
+  "expected": {
+    "withoutReinforcement": "partial",
+    "withReinforcement":    "survives"
+  }
+}

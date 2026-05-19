@@ -1,0 +1,14 @@
+{
+  "id": "10-reactive-binding",
+  "name": "Text edit on a reactive {{ binding }}",
+  "bucket": "fragile",
+  "pathMatch": "/about",
+  "notes": "Edits the text content of <p id='counter-label'>{{ label }}</p> inside StatefulCounter. `label` is a computed property derived from a ref (`count`). On hydration walk Vue re-renders the text to the computed's current value (`0 clicks`), discarding the edge-applied text. This is the canonical reactive-binding recovery case — isolated from case 07 (which mixes static and reactive ops in one variation). Reinforcement: annotator stamps data-allow-mismatch='text', and companion re-applies post-mount.",
+  "ops": [
+    { "type": "text", "selector": "#counter-label", "value": "Edge-applied label override" }
+  ],
+  "expected": {
+    "withoutReinforcement": "recovered",
+    "withReinforcement":    "survives"
+  }
+}

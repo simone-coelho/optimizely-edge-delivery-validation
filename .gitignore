@@ -1,37 +1,164 @@
+# ──────────────────────────────────────────────────────────────────────────────
 # Dependencies
+# ──────────────────────────────────────────────────────────────────────────────
 node_modules/
+**/node_modules/
+.pnp.*
+.yarn/cache
+.yarn/install-state.gz
+.yarn/build-state.yml
+.yarn/unplugged
+jspm_packages/
+
+# Lock files are kept (intentional — reproducible installs).
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Build / framework output
+# ──────────────────────────────────────────────────────────────────────────────
+dist/
+**/dist/
+build/
+**/build/
+out/
+**/out/
+.output/
+**/.output/
+.nuxt/
+**/.nuxt/
+.next/
+**/.next/
+.svelte-kit/
+**/.svelte-kit/
+.turbo/
+.cache/
+**/.cache/
+.parcel-cache/
+.vite/
+**/.vite/
+
+# Cloudflare / Workers
+.wrangler/
+**/.wrangler/
+.miniflare/
+**/.miniflare/
+.mf/
+**/.mf/
+
+# TypeScript build info
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Logs
+# ──────────────────────────────────────────────────────────────────────────────
+*.log
+logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
+pnpm-debug.log*
+lerna-debug.log*
 
-# Run output (timestamped under the profile's outputDir)
-runs/
-*/runs/
-runs-index.json
-*-report.json
-edge-validation-report.json
-soak-report.json
-fix-verification-report.json
+# ──────────────────────────────────────────────────────────────────────────────
+# Coverage / test artifacts
+# ──────────────────────────────────────────────────────────────────────────────
+coverage/
+**/coverage/
+.nyc_output/
+*.lcov
 
-# Local / private profiles — keep only profiles/example.json in version control
-profiles/*.json
-!profiles/example.json
-
-# OS / editor
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
+# ──────────────────────────────────────────────────────────────────────────────
 # Env / secrets
+# ──────────────────────────────────────────────────────────────────────────────
 .env
 .env.*
 !.env.example
 *.pem
 *.key
+*.crt
+*.p12
+.dev.vars
+.dev.vars.*
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OS / editor junk
+# ──────────────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+desktop.ini
+$RECYCLE.BIN/
+~$*
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+*~
+.history/
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Temp / scratch
+# ──────────────────────────────────────────────────────────────────────────────
+*.tmp
+*.bak
+*.orig
+*.rej
+tmp/
+temp/
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Repo-specific exclusions
+# This repo is for Optimizely Solutions Architects + engineering — we publish
+# code, enhancements, and fixes for Optimizely Edge Delivery. The following are
+# NOT shared:
+#   - Customer-named research and reports (AmeriSave engagement materials)
+#   - Local recovery / backup directories
+#   - macOS "* copy.*" restoration duplicates
+#   - Past validation run output JSON
+#   - Old/superseded README and nested scratch copies
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Customer-named research and reports
+amerisave/
+CUSTOMER-REPORT-AMERISAVE.md
+FINAL-REPORT-AMERISAVE.md
+ENGINEERING-REPORT-304-BLANK-PAGE-FIX.md
+ENGINEERING-REPORT-STALE-REVISION.md
+
+# Local recovery backup of edge-del-v2 (same content; do not push)
+edge-del-v2-recovered/
+
+# Restore duplicates (Finder-style "<name> copy.<ext>")
+* copy.md
+* copy.js
+* copy.ts
+* copy.mjs
+* copy.json
+* copy.txt
+* copy/
+**/* copy.md
+**/* copy.js
+**/* copy.ts
+**/* copy.mjs
+**/* copy.json
+**/* copy.txt
+**/* copy/
+
+# Past validation run outputs (timestamped output, regenerable)
+edge-validation-report.json
+fix-verification-report.json
+soak-report.json
+
+# Old/superseded
+validation-README.md
+
+# Nested scratch copy (recursive container)
+___temp_research/

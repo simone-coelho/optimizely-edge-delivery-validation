@@ -1,0 +1,15 @@
+{
+  "id": "02-attribute-only",
+  "name": "Attribute edits on hero CTA",
+  "bucket": "safe",
+  "pathMatch": "/",
+  "notes": "Attribute edits on an existing element with static (non-reactive) attributes in the template. Empirical observation: SURVIVES without reinforcement — Vue's hydration accepts the SSR'd attribute values without reconciling, because the template has no :attr=expr bindings for href/data-ga-name. Reinforcement is the safety net for cases where the customer adds a reactive binding later.",
+  "ops": [
+    { "type": "attribute", "selector": "#hero-cta", "name": "href",         "value": "/signup?expt=02" },
+    { "type": "attribute", "selector": "#hero-cta", "name": "data-ga-name", "value": "free trial — variant" }
+  ],
+  "expected": {
+    "withoutReinforcement": "survives",
+    "withReinforcement":    "survives"
+  }
+}

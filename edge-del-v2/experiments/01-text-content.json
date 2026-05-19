@@ -1,0 +1,15 @@
+{
+  "id": "01-text-content",
+  "name": "Text content swap on hero headline",
+  "bucket": "safe",
+  "pathMatch": "/",
+  "notes": "Hardcoded text inside a Vue component template (no {{ }} interpolation). Empirical observation (deployed lab, prod build): SURVIVES without reinforcement — Vue's hydration walks the DOM and accepts static text as-rendered without reconciling against an expected vNode value. The guidance treated text edits as 'safe with data-allow-mismatch'; the empirical reality is that static-template text is safe even without that attribute. Reinforcement layer remains a defensive belt-and-suspenders.",
+  "ops": [
+    { "type": "text", "selector": "#hero-headline", "value": "Move faster with Lab Co." },
+    { "type": "text", "selector": "#hero-subhead",  "value": "Edge-applied variation. Same Vue 3.5 SSR page underneath." }
+  ],
+  "expected": {
+    "withoutReinforcement": "survives",
+    "withReinforcement":    "survives"
+  }
+}

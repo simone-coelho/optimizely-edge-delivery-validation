@@ -1,0 +1,27 @@
+{
+  "name": "edge-del-v2-target-app",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Nuxt 3.21 / Vue 3.5 SSR target site + Edge Delivery worker integrated via Pages _worker.js advanced mode",
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "build:pages": "node build-pages.mjs",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "dev": "nuxt dev",
+    "postinstall": "nuxt prepare",
+    "deploy": "node build-pages.mjs && wrangler pages deploy dist --project-name edge-del-v2-target --branch main --commit-dirty=true"
+  },
+  "dependencies": {
+    "@optimizely/edge-delivery": "^1.0.10",
+    "edge-del-v2-reinforce": "*",
+    "nuxt": "^3.21.5",
+    "vue": "^3.5.33",
+    "vue-router": "^4.4.5"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0",
+    "wrangler": "^4.0.0"
+  }
+}

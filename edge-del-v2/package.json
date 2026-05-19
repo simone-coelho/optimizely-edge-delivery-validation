@@ -1,0 +1,24 @@
+{
+  "name": "edge-del-v2-workspace",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Optimizely Edge Delivery Hydration Validation Kit — workspace root",
+  "workspaces": [
+    "target-app",
+    "edge-worker",
+    "reinforce",
+    "harness"
+  ],
+  "scripts": {
+    "install:all": "npm install --workspaces --include-workspace-root",
+    "build:reinforce": "npm run build --workspace reinforce",
+    "build:worker": "npm run build --workspace edge-worker",
+    "deploy:pages": "npm run deploy --workspace target-app",
+    "deploy:worker": "npm run deploy --workspace edge-worker",
+    "harness:run": "npm run run --workspace harness",
+    "harness:install-browsers": "npx playwright install chromium"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "06-rearrange-keyed",
+  "name": "Rearrange items in a keyed v-for (pricing cards)",
+  "bucket": "fragile",
+  "pathMatch": "/pricing",
+  "notes": "Pricing cards use v-for :key=plan.id (PricingCards.vue). The guidance suggested keyed reordering would be graceful — that holds for POST-MOUNT re-renders against changed data, but does not hold for HYDRATION. Empirical observation: Vue's hydrator reconciles the keyed v-for back to the rendered template's array order regardless of the SSR'd DOM order. So edge-applied structural reorder is recovered even with keys. Reinforcement re-applies post-hydration.",
+  "ops": [
+    {
+      "type": "move",
+      "selector":   "#plan-starter",
+      "toSelector": "#plan-enterprise",
+      "position":   "after"
+    }
+  ],
+  "expected": {
+    "withoutReinforcement": "recovered",
+    "withReinforcement":    "survives"
+  }
+}
