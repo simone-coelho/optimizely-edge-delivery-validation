@@ -1,0 +1,70 @@
+--- index.ts.original	2026-03-13 12:41:09.423495400 -0400
++++ index.ts.patched	2026-03-13 13:14:23.094087500 -0400
+@@ -163,7 +163,21 @@
+         requestUrl.search = searchParams.toString();
+     }
+ 
+-    return new Request(requestUrl, request);
++    // Layer B: Strip conditional request headers to prevent the origin from
++    // returning 304 Not Modified with an empty body. The edge worker must
++    // always receive a full response to safely apply experiment transforms.
++    const modifiedHeaders = new Headers(request.headers);
++    modifiedHeaders.delete('If-None-Match');
++    modifiedHeaders.delete('If-Modified-Since');
++    modifiedHeaders.delete('If-Unmodified-Since');
++    modifiedHeaders.delete('If-Range');
++
++    return new Request(requestUrl, {
++        method: request.method,
++        headers: modifiedHeaders,
++        body: request.body,
++        redirect: request.redirect,
++    });
+ }
+ 
+ async function getControl(
+@@ -367,6 +381,21 @@
+                 getRelay(targetRequest, edgeOptions, logger),
+             ]);
+ 
++            // Layer A: Only rewrite full HTML responses. If the origin returned
++            // a non-200 status (e.g. 304 Not Modified, 301, 404, 500) or a
++            // non-HTML content type, pass the response through untouched.
++            // This prevents blank pages when the origin returns an empty 304.
++            const controlContentType = (control.headers.get('content-type') || '').toLowerCase();
++            const controlIsHtml = controlContentType.includes('text/html');
++
++            if (control.status !== 200 || !controlIsHtml) {
++                logger.info(
++                    `Control response is HTTP ${control.status} (${controlContentType || 'no content-type'}). ` +
++                    `Skipping experiment rewrite — returning original response.`
++                );
++                return control;
++            }
++
+             edgeOptions.nonce =
+                 edgeOptions.nonce ||
+                 getScriptNonceFromHeader(
+@@ -421,6 +450,22 @@
+                     headers.set(key, value);
+                 }
+             });
++
++            // Layer C: Crash-prevention guard — if body is null despite passing
++            // Layer A (status 200 + text/html), skip HTMLRewriter to avoid a
++            // transform() error on null input. This does not recover the page
++            // (the body is already lost), but it prevents a worker exception
++            // and logs a warning for investigation. In practice this should
++            // never fire because Layer B ensures the origin returns a full body.
++            if (!control.body) {
++                logger.warning(
++                    'Control response body is null despite HTTP 200 + text/html. ' +
++                    'Skipping HTMLRewriter to prevent transform error. ' +
++                    'Investigate: Layer B may have failed to strip conditional headers.'
++                );
++                return control;
++            }
++
+             return rewriter.transform(
+                 new Response(control?.body, {
+                     ...control,

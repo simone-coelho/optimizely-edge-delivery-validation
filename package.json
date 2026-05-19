@@ -1,0 +1,34 @@
+{
+  "name": "optimizely-edge-delivery-validation",
+  "version": "1.0.0",
+  "type": "commonjs",
+  "description": "Reusable validation harness for Optimizely Edge Delivery — proves cache/304 blank-page fixes across customer domains.",
+  "license": "MIT",
+  "author": "Simone Coelho",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/simone-coelho/optimizely-edge-delivery-validation.git"
+  },
+  "bugs": {
+    "url": "https://github.com/simone-coelho/optimizely-edge-delivery-validation/issues"
+  },
+  "homepage": "https://github.com/simone-coelho/optimizely-edge-delivery-validation#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "probe": "node probe.js",
+    "validate": "node run-validation.js",
+    "test-fix": "node test-fix.js"
+  },
+  "keywords": [
+    "optimizely",
+    "edge-delivery",
+    "cloudflare-workers",
+    "validation",
+    "ab-testing",
+    "experimentation",
+    "cache",
+    "304"
+  ]
+}
