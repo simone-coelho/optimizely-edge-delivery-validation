@@ -83,21 +83,27 @@ that contains three pieces:
 1. **The Optimizely Edge Delivery SDK** — `@optimizely/edge-delivery`,
    published by Optimizely. This is what fetches the variation
    manifest and applies operations to the HTML stream.
-2. **The companion script (the reinforcement layer)** — a roughly 4 KB
-   browser script that re-applies any operation the SPA framework's
-   hydration cleanup discards. Bundled into the worker package
-   regardless of delivery mode. Two supported delivery modes, and the
-   choice is Indeed's:
-     - **Default — worker-injected inline.** The worker emits the
-       companion as an inline `<script>` block before `</body>`.
+2. **The companion script (the reinforcement layer)** — a roughly
+   11 KB browser script (~3 KB gzipped) that re-applies any operation
+   the SPA framework's hydration cleanup discards. Two supported
+   install modes — both fully first-class — and the choice is Indeed's:
+     - **Mode 1 — worker inlines the companion.** The worker emits
+       the companion as an inline `<script>` block before `</body>`.
        Indeed does nothing additional on the page side; deploying
-       the worker *is* deploying the companion.
-     - **Alternative — customer-side static asset.** The companion
-       file is hosted in Indeed's existing bundle and loaded as a
-       regular script tag in the page template. The worker is
-       configured (single flag) to skip the inline injection. This
-       mode exists for environments where strict CSP prohibits
-       inline scripts.
+       the worker IS deploying the companion. Requires CSP that
+       permits inline scripts (or per-request nonce).
+     - **Mode 2 — application code installs the companion.** Two
+       flavors:
+         - Flavor 2a — companion is a static asset in Indeed's
+           public directory, referenced via `<script src>` from the
+           root layout.
+         - Flavor 2b — companion is vendored under Indeed's app
+           source tree and imported via the bundler so it ships
+           inside the main application JS artifact.
+       In either Mode 2 flavor, the worker omits the companion
+       inline emit (the inline JSON manifest tag is still emitted —
+       the companion needs it). CSP-friendly: `script-src 'self'`
+       is sufficient.
 3. **A pass-through to Indeed's origin.** The worker forwards
    requests to Indeed's origin, pipes the response through the SDK +
    companion, and returns the modified stream.
@@ -155,18 +161,18 @@ Indeed's responsibilities
    new SDK versions (security, bug fixes, support for new change
    types). The maintenance posture is comparable to any other edge
    dependency Indeed already operates.
-5. **Choose a companion delivery mode.** The companion ships inside
-   the worker bundle either way. The question is purely how it
-   reaches the browser:
-     - inline-injected by the worker — default, zero integration on
-       Indeed's pages, requires CSP that permits inline scripts (or
-       the companion's SRI hash on the allow list);
-     - hosted as a static asset in Indeed's bundle — alternative,
-       requires Indeed to include the companion file in their build
-       and reference it via a script tag, works under strict CSP.
-   This is a single configuration flag on the worker, not a separate
-   product. We just need Indeed to tell us which path before the
-   first rollout.
+5. **Choose a companion install mode** — Mode 1 (worker inlines) or
+   Mode 2 (application code installs, with flavor 2a static asset or
+   2b vendored import). Both are fully first-class — they produce
+   identical runtime behavior; the choice is about who owns the
+   companion's deploy lifecycle and whether CSP can allow inline
+   scripts. The Mode-1-vs-Mode-2 choice is a single code-level
+   decision the worker code reflects; it is not a runtime toggle.
+   The decision matrix in CUSTOMER-GUIDE.md § 8.3 walks through the
+   trade-offs in detail. Short version: if Indeed's edge-worker team
+   and application team are the same group on the same cadence,
+   Mode 1 is the smaller diff; if they're separate teams or CSP
+   forbids inline scripts, Mode 2 is the right answer.
 6. **Provide a named technical owner.** The Rapid Experimentation team
    needs a counterpart at Indeed for the worker rollout and for
    ongoing version bumps.
@@ -205,7 +211,7 @@ What the meeting should achieve
 | Deployment vehicle identified.                  | Cloudflare Workers (most likely), or alternative if Indeed has a different edge.    |
 | Integration point identified.                   | Which traffic routes through the worker — full site, or scoped to experiment URLs.  |
 | Maintenance posture accepted.                   | Indeed will deploy SDK + companion updates on Optimizely's release cadence.         |
-| Companion delivery mode chosen.                 | Worker-injected inline (default — zero integration) OR customer-side static asset. |
+| Companion install mode chosen.                  | Mode 1 (worker inlines) OR Mode 2 (application code installs, 2a static asset or 2b vendored import). |
 | Migration timeline clarified.                   | When does Performance Edge get decommissioned for Indeed; phased or hard cutover.   |
 
 
@@ -224,12 +230,15 @@ Talking points (for the room)
   SDK and a small browser-side companion script. You deploy it as-is
   or integrate it with your existing Cloudflare setup — your
   choice."
-- "The companion ships *inside* the worker bundle. By default the
-  worker emits it inline in each response — zero work on your side
-  beyond deploying the worker, your page templates don't change. If
-  your CSP prohibits inline scripts, the alternative is hosting the
-  companion as a regular static asset in your bundle. Both modes are
-  first-class; it's a configuration flag, not a separate product."
+- "Two equally-supported install modes for the companion. Mode 1:
+  the worker emits the companion inline in every response — zero
+  work on your application code beyond a one-line `useEffect` in
+  your root layout that signals hydration is done. Mode 2: your
+  application code installs the companion (either as a static asset
+  or vendored into your main JS bundle), and the worker omits the
+  companion inline emit. The runtime behavior is identical; the
+  choice is about deploy ownership and CSP fit. Both modes are
+  first-class — pick whichever matches your operational model."
 - "The companion script exists because your site is an SPA.
   Hydration can throw away edge-applied DOM during the
   framework's recovery step. The companion re-applies any operation
@@ -255,12 +264,14 @@ Open questions for Indeed
 - Does Indeed already run a Cloudflare Worker at the edge for other
   purposes? If yes, we can integrate; if no, the reference worker is
   the deployment baseline.
-- What's the CSP posture on inline scripts? This determines the
-  companion delivery mode: permitted → worker-injected inline
-  (default, zero integration on Indeed's pages); prohibited →
-  customer-side static asset (Indeed adds the companion file to
-  their bundle). Both modes work; we just need to know which path
-  before the first rollout.
+- What's the CSP posture on inline scripts, and how is the
+  application-team / edge-worker-team ownership split at Indeed?
+  Both inputs feed the Mode 1 vs Mode 2 decision: same team / lenient
+  CSP → Mode 1 (worker inlines) is the smaller diff; separate teams
+  / strict CSP → Mode 2 (application code installs, 2a or 2b) is the
+  right answer. Decision matrix in CUSTOMER-GUIDE.md § 8.3. Both
+  modes work end to end; we just need to know which path before the
+  first rollout.
 - Which routes are eligible for experimentation? Full site, or a
   scoped subset?
 - Who's the named engineering counterpart at Indeed for the worker

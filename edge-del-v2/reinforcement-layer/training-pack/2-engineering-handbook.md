@@ -55,16 +55,17 @@ into your project:
 cp -r reinforcement-layer/training-pack/code/  your-app/src/optimizely-companion/
 ```
 
-You now have six files in your project:
+You now have eight files in your project:
 
 ```
 src/optimizely-companion/
 ├── worker-integration.ts     ← Cloudflare worker post-processor (the wrapper you wire into your fetch handler)
+├── should-process.ts         ← request filter — bypass non-HTML requests at the top of the worker
 ├── companion.ts              ← browser companion (TypeScript source)
 ├── ops.ts                    ← DOM operation primitives
 ├── types.ts                  ← shared Op type
 ├── build-companion.mjs       ← esbuild script — produces companion.min.js + companion-source.mjs
-├── companion.min.js          ← pre-built minified IIFE (drop-in for CSP-restricted setups)
+├── companion.min.js          ← pre-built minified IIFE (drop-in for Mode 2 installs — see Part 2)
 └── README.md                 ← what each file is, how it wires together
 ```
 
@@ -83,7 +84,7 @@ node build-companion.mjs
 
 This writes two files next to the sources:
 
-- `companion.min.js` — minified IIFE, ~8 KB raw, under 2 KB gzipped.
+- `companion.min.js` — minified IIFE, ~11 KB raw, ~3 KB gzipped.
 - `companion-source.mjs` — exports `COMPANION_SOURCE` as a string
   that your worker imports and inlines into the response body.
 
@@ -127,7 +128,7 @@ the `companion-source.mjs` artifact entirely and import
 `companion.min.js?raw` directly. The build script is provided for
 worker setups without raw-text imports.
 
-### Step 3 — deploy and confirm headers
+### Step 5 — deploy and confirm headers
 
 ```bash
 npx wrangler deploy
@@ -161,20 +162,158 @@ const reinforce = new URL(request.url).searchParams.get('reinforce') !== 'off';
 
 ---
 
-## Part 2 — Browser / client
+## Part 2 — Browser / client (Mode 1 vs Mode 2)
 
-If you accepted the inline-script approach in Part 1, **there is
-nothing to install on the browser side.** The worker already
-delivered the companion in the SSR response. Skip to Part 3.
+There are two install modes for getting the companion onto the page.
+The runtime behavior is identical between them; the difference is who
+delivers the companion's JavaScript to the browser.
 
-### Only if you have CSP that disallows inline scripts
+- **Mode 1 — worker inlines the companion.** Part 1's worker
+  integration uses this pattern. Once your worker is deployed, the
+  companion is in every response. Your application code adds
+  nothing. The only thing your React or Vue components need to do is
+  dispatch a `CustomEvent('edge-del-v2-hydrated')` from a mount
+  handler (snippets in §"Hydration-signal dispatch" below).
+- **Mode 2 — your application code installs the companion.** Vendor
+  the companion file into the application repository, deliver it
+  through your existing application JS pipeline. Two flavors:
+  - **Flavor 2a** — drop `companion.min.js` into static assets and
+    reference it via a `<script src>` tag in your root layout.
+  - **Flavor 2b** — vendor the source under `/lib/vendor/` and add
+    a side-effect import to your application entry so your bundler
+    pulls the companion into the main JS artifact.
+  Configure `worker-integration.ts` to omit the companion inline emit
+  (one-line change documented at the bottom of this section).
 
-You have two choices:
+Pick the mode that fits your operational model. The decision matrix
+is in CUSTOMER-GUIDE.md § 8.3; the short version:
 
-#### Choice A — emit the companion via a nonce'd inline tag
+|                                                       | Mode 1                              | Mode 2                                  |
+| ----------------------------------------------------- | ----------------------------------- | --------------------------------------- |
+| Where the companion lives in the response             | Inline `<script>` from worker       | `<script src>` or bundled into app JS   |
+| Who owns the deploy of the companion                  | Worker repository                   | Application repository                  |
+| Application template changes required                 | None                                | `<script src>` tag (2a) or `import` (2b) |
+| Application bundle size impact                        | None                                | None (2a) or +~11 KB (2b)               |
+| CSP `'unsafe-inline'` required for `script-src`       | Yes (or per-request nonce)          | No                                      |
+| Companion version pinning                             | Pinned by worker repository         | Pinned by application repository        |
+| Coordinating worker team and app team for updates     | Required                            | Not required                            |
 
-If your CSP allows nonces, plumb your nonce through the worker. Edit
-`worker-integration.ts` where it emits the companion `<script>` tag:
+### Hydration-signal dispatch (required in every mode)
+
+In every install mode, the application code dispatches
+`CustomEvent('edge-del-v2-hydrated')` once the framework's root tree
+has hydrated. The companion listens for this event at boot and runs
+the apply on first dispatch.
+
+**Next.js App Router** (`app/layout.tsx`):
+
+```tsx
+'use client';
+import { useEffect } from 'react';
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('edge-del-v2-hydrated'));
+  }, []);
+  return <html><body>{children}</body></html>;
+}
+```
+
+**Next.js Pages Router** (`pages/_app.tsx`):
+
+```tsx
+import { useEffect } from 'react';
+
+export default function App({ Component, pageProps }) {
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('edge-del-v2-hydrated'));
+  }, []);
+  return <Component {...pageProps} />;
+}
+```
+
+**Vue / Nuxt** — optional, since the Nuxt adapter auto-detects on
+boot via `useNuxtApp().hook('app:mounted', …)`. The custom-event
+dispatch is supported as an explicit-timing alternative; the
+one-shot apply gate ensures whichever fires first wins.
+
+```vue
+<!-- app.vue -->
+<script setup>
+import { onMounted } from 'vue';
+onMounted(() => {
+  window.dispatchEvent(new CustomEvent('edge-del-v2-hydrated'));
+});
+</script>
+```
+
+### Mode 2 — additional steps to deliver the companion from app code
+
+If you picked Mode 2, you have two flavors. Pick one.
+
+#### Flavor 2a — static asset + script tag
+
+Add a step to your build pipeline that copies
+`src/optimizely-companion/companion.min.js` into your public assets
+directory:
+
+```json
+// package.json — alongside your existing scripts
+"scripts": {
+  "build:companion": "node src/optimizely-companion/build-companion.mjs && cp src/optimizely-companion/companion.min.js public/edge-del-v2-companion.min.js"
+}
+```
+
+Add a `<script src>` tag to your root layout pointing at the hosted
+file:
+
+```html
+<script src="/edge-del-v2-companion.min.js" defer></script>
+```
+
+(In Next.js Pages Router, the tag goes in `pages/_document.tsx`;
+in App Router it goes inside `<body>` of `app/layout.tsx`. See
+CUSTOMER-GUIDE.md § 8.7.2 for the exact placement.)
+
+#### Flavor 2b — vendored import bundled into application JS
+
+Move `companion.min.js` into your application source tree (e.g.
+`/lib/vendor/`), then add a side-effect import to your application
+entry point so your bundler picks it up:
+
+```ts
+// In app/layout.tsx, pages/_app.tsx, or app.vue
+import '@/lib/vendor/edge-del-v2-companion.min.js';
+```
+
+The companion's IIFE runs as part of the application bundle's
+normal load — no separate `<script>` tag needed.
+
+#### Configuring the worker to omit the companion inline emit
+
+In both Mode 2 flavors, `worker-integration.ts` should NOT emit the
+companion inline. Comment out (or remove) the companion `<script>`
+line where the wrapper builds the injection string:
+
+```ts
+// in worker-integration.ts, the injection that originally read:
+const injection =
+  `<script type="application/json" id="${MANIFEST_TAG_ID}">${manifestJson}</script>` +
+  `<script id="${COMPANION_TAG_ID}">${COMPANION_SOURCE}</script>`;
+
+// becomes (Mode 2 — application code delivers the companion):
+const injection =
+  `<script type="application/json" id="${MANIFEST_TAG_ID}">${manifestJson}</script>`;
+```
+
+The inline JSON manifest is still emitted — the companion needs it
+to know what to replay. Only the companion `<script>` itself moves
+from the worker to the application code.
+
+### Nonce'd inline tag — strict CSP variant of Mode 1
+
+If you want to stay in Mode 1 (worker inlines) but your CSP doesn't
+allow `'unsafe-inline'`, plumb your nonce through the worker:
 
 ```ts
 // in worker-integration.ts, replace:
@@ -186,31 +325,6 @@ If your CSP allows nonces, plumb your nonce through the worker. Edit
 Set `Content-Security-Policy: script-src 'self' 'nonce-<value>'` per
 your standard. The nonce comes from wherever your existing nonce
 plumbing generates it.
-
-#### Choice B — serve the companion as a static asset
-
-If nonces aren't an option, host the companion as a same-origin
-script. Add a step to your build pipeline that copies
-`src/optimizely-companion/companion.min.js` into your public assets
-directory:
-
-```json
-// package.json — alongside your existing scripts
-"scripts": {
-  "build:companion": "node src/optimizely-companion/build-companion.mjs && cp src/optimizely-companion/companion.min.js public/optimizely-companion.js"
-}
-```
-
-Then in `worker-integration.ts`, replace the inline `<script>` with
-a `<script src>`:
-
-```ts
-const injection =
-  `<script type="application/json" id="${MANIFEST_TAG_ID}">${manifestJson}</script>` +
-  `<script id="${COMPANION_TAG_ID}" src="/optimizely-companion.js" async></script>`;
-```
-
-CSP becomes `script-src 'self'` — no inline needed.
 
 ---
 
@@ -293,19 +407,23 @@ export function onRouteChange(cb: () => void): () => void {
 ```
 
 Pattern documented in detail in
-`reinforcement-layer/CUSTOMER-GUIDE.md` § 8.5.3.
+`reinforcement-layer/CUSTOMER-GUIDE.md` § 8.7.3.
 
 ---
 
 ## Part 5 — Bundle size, performance, security
 
-- **Companion gzipped:** under 2 KB.
+- **Companion bundle:** ~11 KB minified, ~3 KB gzipped.
 - **Worker per-request overhead:** one body read, one regex scan,
   one cdn.optimizely.com fetch (cached). Sub-millisecond on a warm
   cache.
-- **No external requests on the browser side.** The companion is
-  inlined; the manifest is inlined.
-- **CSP:** see Part 2 for nonce / static-asset choices.
+- **Mode 1 — no external requests on the browser side.** The
+  companion is inlined; the manifest is inlined.
+- **Mode 2 — one same-origin request (flavor 2a) OR zero extra
+  requests (flavor 2b, companion is in the application JS artifact).**
+  The inline manifest is still emitted by the worker in either mode.
+- **CSP:** Mode 2 covers `script-src 'self'` cleanly; Mode 1 needs
+  `'unsafe-inline'` or per-request nonces. See Part 2.
 - **Cookies:** unchanged from your existing Edge Delivery install.
   No new cookies.
 - **PII:** the manifest contains DOM selectors and HTML payloads

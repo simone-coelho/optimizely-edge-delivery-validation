@@ -295,7 +295,7 @@ After deploying with `_routes.json` + `shouldProcess()`:
    invocations, the filter is leaking.
 
 5. **Spot-check the response body** of an asset request to confirm
-   no injected `<script id="optly-companion">` ended up inside a JS
+   no injected `<script id="edge-del-v2-companion">` ended up inside a JS
    file. If you ever see this, the worker is processing non-HTML —
    stop and audit Layer 1/2 immediately.
 

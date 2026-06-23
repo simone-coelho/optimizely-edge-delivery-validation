@@ -141,22 +141,41 @@ that scaffolding stripped out.
 
 ### The client / browser side
 
-The engineer is going to:
+Two install modes are supported, both first-class. The engineer
+picks one when writing the worker. Engineering handbook covers the
+exact code for each; CUSTOMER-GUIDE.md § 8.3 has the decision matrix.
 
-1. **Probably do nothing.** If they accepted inline-script in the
-   worker, the companion already ships in the response body. No
-   bundler change, no script tag, no npm install on the client.
+1. **Mode 1 — worker inlines the companion.** The worker delivers
+   the companion in the SSR response. The application code adds a
+   `useEffect`-with-`dispatchEvent` (React) or `onMounted` (Vue) to
+   the root component signaling hydration is complete. No `<script
+   src>` tag, no static asset, no application-side bundling.
 
-2. **OR, if CSP forbids inline scripts:** copy the companion to
-   their static assets and reference it via `<script src>`. Tell
-   them in advance which case applies based on the CSP header you
-   captured during discovery (Section B, question 4).
+2. **Mode 2 — application code installs the companion.** Two
+   flavors:
+   - **Flavor 2a** — the engineer copies `companion.min.js` to
+     static assets and adds a `<script src>` tag to the root
+     layout.
+   - **Flavor 2b** — the engineer vendors the source under
+     `/lib/vendor/` and adds a side-effect import to the
+     application entry so the bundler includes the companion in
+     the main JS artifact.
+   In either flavor, the worker omits the companion inline emit
+   (one-line change in `worker-integration.ts`). Application code
+   still dispatches the hydration signal as in Mode 1.
 
-There is no third option. The companion is browser-only JS — it
-doesn't need a build step, it doesn't need framework integration
-code in user-land, it doesn't ask the customer to call any function.
-It reads the inline manifest, waits for the framework's mount signal
-via the bundled adapter, and replays the ops.
+Use the CSP header you captured in discovery (Section B, question
+4) and the team-ownership question to pick the mode. Same team /
+lenient CSP → Mode 1 is the smaller diff. Separate teams / strict
+CSP → Mode 2 is the right answer.
+
+In every mode, the companion is browser-only JS — it doesn't need a
+build step on the customer side (beyond running `build-companion.mjs`
+once to regenerate artifacts), it doesn't need per-framework
+integration code in user-land, it doesn't ask the customer to call
+any function from the rendered components. It reads the inline
+manifest, waits for the framework's mount signal via the bundled
+adapter OR the customer's dispatched event, and replays the ops.
 
 ---
 
@@ -256,10 +275,14 @@ path; it shouldn't be necessary.
 ### "CSP blocked the companion `<script>`"
 
 Discovery question 4 should have caught this. If you missed it:
-flip to the asset-path install (engineering handbook § "Part 2,
-Choice B"). Adds one static file to the customer's public assets,
-swaps the worker's injection to a `<script src>` tag. Five-minute
-change.
+flip from Mode 1 to Mode 2 — engineering handbook § "Part 2 —
+Browser / client (Mode 1 vs Mode 2)". Mode 2 flavor 2a adds one
+static file to the customer's public assets and a `<script src>`
+tag to the layout; Mode 2 flavor 2b vendors the file under
+`/lib/vendor/` and adds a side-effect import to the application
+entry. In either flavor, drop the companion inline emit from
+`worker-integration.ts` (one-line change). Five- to fifteen-minute
+change depending on the flavor.
 
 ---
 

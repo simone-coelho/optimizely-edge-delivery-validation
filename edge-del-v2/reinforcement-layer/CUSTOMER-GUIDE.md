@@ -62,7 +62,7 @@ without per-experiment customer code:
   companion. **No second fetch. No manifest re-parse. Everything derived
   from the response we already produced.**
 
-- **Browser companion.** A small (~4 KB) IIFE the worker emits. On every
+- **Browser companion.** A small (~11 KB minified, ~3 KB gzipped) IIFE the worker emits. On every
   page load it reads the inline manifest, waits for the SSR framework to
   finish hydrating (Nuxt's `app:mounted` hook first, then a Vue root
   instance poll, then `requestIdleCallback` as a fallback), and
@@ -308,7 +308,7 @@ match the deployed lab. Substitute customer values for production.
                    {manifest JSON}
                  </script>
                  <script id="edge-del-v2-companion">
-                   {companion IIFE source, ~4 KB inlined}
+                   {companion IIFE source, ~11 KB inlined / ~3 KB gzipped}
                  </script>
                </body>
              Worker returns Response.
@@ -681,66 +681,182 @@ customer install is **zero touches** — upgrading to the new SDK version
 delivers both pieces.
 
 If the customer prefers the separate-package option, this section is the
-install reference.
+install reference. Two equally-supported install modes are documented.
+The runtime behavior on the page is identical between them; the
+difference is who delivers the companion's JavaScript to the browser —
+the edge worker (§8.1) or the customer's application code (§8.2).
 
-### 8.1 Install — npm + bundler
+Whichever mode is chosen, the worker is still responsible for variation
+application via the Optimizely Edge Delivery SDK, and for emitting the
+inline JSON manifest the companion reads. The only thing that varies is
+whether the worker ALSO emits an inline `<script>` block containing the
+companion source itself, or skips that step and lets the application
+code load the companion through its own mechanisms.
+
+This is a single code-level decision made once at worker-deploy time.
+Not a runtime toggle, not a query parameter, not an environment-variable
+flag. §8.3 lays out the trade-offs explicitly for the customer engineer
+making the call.
+
+### 8.1 Mode 1 — worker inlines the companion
+
+The kit's customer-facing reference worker uses this pattern. The
+worker imports `COMPANION_SOURCE` at build time — it's a minified string
+constant exported by the reinforce package — and the inject step runs
+unconditionally on every transformed response:
+
+```typescript
+// In the customer's worker. Runs on every transformed response.
+// Until the npm package publishes (§8.4), import from a vendored path:
+import { COMPANION_SOURCE } from './vendor/companion-source.mjs';
+
+const tag =
+  `<script type="application/json" id="edge-del-v2-manifest">${manifestJson}</script>` +
+  `<script id="edge-del-v2-companion">${COMPANION_SOURCE}</script>`;
+
+const closing = bodyText.lastIndexOf('</body>');
+const withTag = closing >= 0
+  ? bodyText.slice(0, closing) + tag + bodyText.slice(closing)
+  : bodyText + tag;
+```
+
+Once the worker is deployed with that step in place, the companion is
+in every response from that point on. The companion source itself is
+bundled into the worker at build time — zero runtime fetches, zero
+subrequest cost, no separate asset for the customer to maintain.
+
+**What this means for the customer:**
+
+- Application pages need nothing added — no `<script src>` tag in the
+  layout, no static asset to host, no version-bump deploy in the
+  application repo when the companion updates.
+- The only application-side code is the hydration-signal dispatch
+  (documented per framework in §8.7).
+- The companion deploy lifecycle rides with the worker. When a new
+  companion build is published, pick it up by re-vendoring into the
+  worker repo and shipping a worker deploy. The application repo
+  doesn't see the change.
+- CSP requirement: `script-src 'unsafe-inline'`, or a per-request
+  nonce (see §8.8).
+
+**Vendor source files** until the npm package publishes (§8.4):
+copy `companion-source.mjs` from
+`https://github.com/simone-coelho/optimizely-edge-delivery-validation/tree/main/edge-del-v2/reinforce/dist/`
+into the worker repository's vendor directory.
+
+### 8.2 Mode 2 — application code installs the companion
+
+Install the companion directly into the customer's application
+repository. Two flavors, both equivalent in runtime behavior — pick
+whichever fits the customer's build system and code-review process.
+
+**Flavor 2a — static asset + script tag.** Drop `companion.min.js`
+under the application's static-asset directory (e.g.
+`/public/static/edge-del-v2-companion.min.js`), and add a `<script src>`
+tag to the root layout pointing at the hosted file.
+
+```html
+<!-- In the customer's root template, ideally just before </body>. -->
+<script src="/static/edge-del-v2-companion.min.js" defer></script>
+```
+
+**Flavor 2b — vendored import bundled into application JS.** Vendor
+`companion.min.js` (or `companion-source.mjs`) under the application
+source tree (e.g. `/lib/vendor/`), and add a side-effect import to the
+application entry point so the customer's bundler includes the companion
+in the main JS artifact:
+
+```typescript
+// In the application's root entry, e.g. app/layout.tsx, pages/_app.tsx,
+// app.vue, or main.ts.
+import '@/lib/vendor/edge-del-v2-companion.min.js';
+```
+
+The companion's IIFE runs as part of the application bundle's normal
+load.
+
+In either flavor, the worker still does variation application and
+inline manifest emission. The only difference from Mode 1 is the worker
+OMITS the `<script id="edge-del-v2-companion">…</script>` emit, because
+the application code handles delivery.
+
+**Reasons to pick Mode 2:**
+
+- The companion deploy lifecycle rides with the application repository,
+  not the worker. The application team can update the companion without
+  coordinating a worker deploy.
+- Worker team and application team operate on separate cadences.
+  Mode 2 decouples the two.
+- The application team wants to own the companion's version pinning
+  alongside React, Next.js, Vue, or whatever else the application
+  artifact already pins.
+- The engineering process requires every JavaScript artifact loaded
+  into the page to be reviewed in the application repository.
+- Strict CSP forbids inline scripts and per-request nonces aren't
+  practical. Mode 2 covers `script-src 'self'` cleanly.
+
+**Vendor source files** until the npm package publishes (§8.4):
+download `companion.min.js` (for flavor 2a) or `companion-source.mjs`
+(for flavor 2b) from
+`https://github.com/simone-coelho/optimizely-edge-delivery-validation/tree/main/edge-del-v2/reinforcement-layer/training-pack/code/`.
+
+### 8.3 Choosing between Mode 1 and Mode 2
+
+A single decision made once when writing the worker. The runtime
+behavior on the page is identical in both modes; everything else
+is a question of ownership, lifecycle, and CSP fit.
+
+|                                                       | Mode 1                              | Mode 2                                  |
+| ----------------------------------------------------- | ----------------------------------- | --------------------------------------- |
+| Where the companion lives in the response             | Inline `<script>` from worker       | `<script src>` or bundled into app JS   |
+| Who owns the deploy of the companion                  | Worker repository                   | Application repository                  |
+| Application template changes required                 | None                                | `<script src>` tag (2a) or `import` (2b) |
+| Application bundle size impact                        | None                                | None (2a) or +~11 KB (2b)               |
+| CSP `'unsafe-inline'` required for `script-src`       | Yes (or per-request nonce)          | No                                      |
+| Companion version pinning                             | Pinned by worker repository         | Pinned by application repository        |
+| Coordinating worker team and app team for updates     | Required                            | Not required                            |
+
+If the worker repository and the application repository are owned by
+the same team and ship on the same cadence, Mode 1 is the smaller
+diff and gets the customer running with the least integration
+overhead. If the worker and application repos are operated by
+different teams, or the application team wants to own the companion's
+version pinning, or strict CSP forbids inline scripts, Mode 2 is the
+right answer. Both modes are first-class.
+
+### 8.4 Install — npm + bundler (FUTURE)
 
 > **NOT YET PUBLISHED.** `@optimizely/edge-delivery-reinforce` is not
 > currently available on `registry.npmjs.org` or any private mirror.
 > Customers running `npm install @optimizely/edge-delivery-reinforce`
 > will hit a 404. Until the package is published, **use the vendored
-> script-tag install in §8.2** instead. This section documents the
-> shape the published package will take so integration code can be
-> written against the eventual import path.
+> install paths in §8.1 (Mode 1) or §8.2 (Mode 2)**. This section
+> documents the shape the published package will take so integration
+> code can be written against the eventual import path.
 
 ```bash
 npm install @optimizely/edge-delivery-reinforce   # FUTURE — not yet available
 ```
 
-In the customer's page entry (Nuxt plugin, layout, or `app.vue`):
+In the customer's worker, the eventual import path for
+`COMPANION_SOURCE` replaces the Mode 1 vendored import:
+
+```typescript
+import { COMPANION_SOURCE } from '@optimizely/edge-delivery-reinforce/companion-source';   // FUTURE
+```
+
+In the customer's application entry (Mode 2 flavor 2b), the eventual
+import path replaces the vendored side-effect import:
 
 ```typescript
 import '@optimizely/edge-delivery-reinforce/companion';   // FUTURE
 ```
 
-The import is a side-effect import. The companion's IIFE runs on load,
-reads the inline manifest, primes the hydration hook. The customer
-adds nothing else. Once the package is published, this install path
-will become the recommended one and §8.2 will move to the alternative
-"strict CSP / no bundler" position.
+Once published, the npm install becomes the recommended source for
+both modes — no functional change to runtime behavior, just a cleaner
+sourcing of the bundle than vendoring from the repository.
 
-### 8.2 Install — vendored script tag
-
-**Current canonical install path.** The `@optimizely/edge-delivery-reinforce`
-npm package referenced in some integration snippets in §8.5 is not yet
-published to a public registry — until that ships, this vendored
-script-tag path is the recommended install for every framework. The
-framework-specific snippets below use this path; the only piece of
-framework-specific code the customer writes is the hydration-signal
-dispatch (§8.5.2 for React, §8.5.1 for Vue/Nuxt), not the import.
-
-```html
-<!-- Place anywhere in the page; ideally just before </body> -->
-<script src="/static/edge-del-v2-companion.min.js"></script>
-```
-
-The companion bundle is ~11 KB minified (includes Nuxt, Backbone, and
-generic framework adapters plus the `edge-del-v2-hydrated` custom-event
-listener). Host it under the customer's own static assets. No CDN
-dependency on Optimizely's infrastructure for the companion itself.
-
-**Where to fetch the bundle** until the npm package publishes:
-
-```
-https://github.com/simone-coelho/optimizely-edge-delivery-validation/raw/main/edge-del-v2/reinforcement-layer/training-pack/code/companion.min.js
-```
-
-Drop the file into the customer's static-asset directory (typically
-`/public/static/` or equivalent) and reference it via the script tag
-above. The file is self-contained — no peer dependencies, no build
-step on the customer side.
-
-### 8.3 Companion lifecycle internals
+### 8.5 Companion lifecycle internals
 
 The companion does the following on load:
 
@@ -783,7 +899,7 @@ The companion does the following on load:
    - `window.dispatchEvent(new CustomEvent('edge-del-v2', {detail: ...}))`
      for each event. RUM tools, Datadog browser SDK, etc. can subscribe.
 
-### 8.4 SPA navigation behaviour
+### 8.6 SPA navigation behaviour
 
 On SPA route changes, Nuxt fires `app:mounted` again (or the new route's
 own mount hook depending on configuration). The companion re-arms its
@@ -791,7 +907,7 @@ hook. The idempotency markers ensure ops that already applied are
 detected and skipped — no double-inserts. If the new route doesn't have
 the targeted selectors in its DOM, the companion no-ops.
 
-### 8.5 Framework adapters
+### 8.7 Framework adapters
 
 The companion's DOM manipulation is framework-agnostic. The only
 framework-specific piece is the **hydration-complete signal** that
@@ -806,7 +922,7 @@ The list below covers the frameworks the kit targets today and the
 adapter shape for each. Adding a new framework is roughly 20 lines of
 detection code in `companion.ts` plus a one-paragraph install snippet.
 
-#### 8.5.1 Vue 3.5 / Nuxt 3 (today's reference implementation)
+#### 8.7.1 Vue 3.5 / Nuxt 3 (today's reference implementation)
 
 **Hydration detection chain** (priority order):
 
@@ -820,20 +936,29 @@ detection code in `companion.ts` plus a one-paragraph install snippet.
    Covers vanilla Vue 3 apps not using Nuxt.
 3. `requestIdleCallback(cb, { timeout: 500 })` — generic fallback.
 
-**Customer install**: load `companion.min.js` per §8.2. The Nuxt
-adapter auto-detects on boot — `useNuxtApp().hook('app:mounted', …)`
-fires the apply with no further customer code.
+**Customer install**: pick Mode 1 (§8.1) or Mode 2 (§8.2) per the
+decision matrix in §8.3. The Nuxt adapter auto-detects on boot in
+either mode — `useNuxtApp().hook('app:mounted', …)` fires the apply
+with no further customer code required.
 
-```html
-<!-- In any always-rendered template (e.g. app.vue or default layout). -->
-<script src="/static/edge-del-v2-companion.min.js"></script>
-```
+- **Mode 1** — worker inlines the companion; nothing more in the Nuxt
+  application code.
+- **Mode 2 flavor 2a** — in any always-rendered template (e.g.
+  `app.vue` or the default layout):
+  ```html
+  <script src="/static/edge-del-v2-companion.min.js" defer></script>
+  ```
+- **Mode 2 flavor 2b** — in the Nuxt application entry, e.g. a Nuxt
+  plugin or `app.vue`:
+  ```typescript
+  import '@/lib/vendor/edge-del-v2-companion.min.js';
+  ```
 
-Optional: if the customer wants explicit control over apply timing
-instead of relying on the Nuxt hook auto-detection, dispatch the
-`edge-del-v2-hydrated` event from `onMounted()` in `app.vue` (same
-pattern as §8.5.2). The companion's one-shot apply gate means the
-auto-detected hook becomes a no-op once the customer event fires —
+Optional, all modes: if the customer wants explicit control over apply
+timing instead of relying on the Nuxt hook auto-detection, dispatch
+the `edge-del-v2-hydrated` event from `onMounted()` in `app.vue`
+(same pattern as §8.7.2). The companion's one-shot apply gate means
+the auto-detected hook becomes a no-op once the customer event fires —
 no risk of double-application.
 
 **Verification** — open the page after install and run in the console:
@@ -855,7 +980,7 @@ emitted by the worker as a defence-in-depth signal; it does not
 prevent prod-build recovery (§11). The companion is what holds the
 variation.
 
-#### 8.5.2 React 18+ / Next.js 13+ (App Router or Pages Router)
+#### 8.7.2 React 18+ / Next.js 13+ (App Router or Pages Router)
 
 **Hydration detection chain** (priority order):
 
@@ -873,19 +998,50 @@ variation.
    become non-null and mounted.
 3. `requestIdleCallback(cb, { timeout: 500 })` — same generic fallback.
 
-**Customer install — two steps**:
+**Customer install**: in every install mode, the application-side code
+is the same — a `useEffect` in the root component that dispatches
+`edge-del-v2-hydrated` once the root client tree finishes hydrating.
+The companion's listener fires the apply on first dispatch.
 
-**Step 1.** Load `companion.min.js` per §8.2. Drop the vendored file
-into static assets and reference it from the page document. In
-Next.js App Router this means adding the script to `app/layout.tsx`;
-in Pages Router add it to `pages/_document.tsx`. The script registers
-the `edge-del-v2-hydrated` listener at boot.
+The only thing that varies between modes is whether the application
+code ALSO loads the companion (via a `<script src>` tag in Mode 2a,
+via a side-effect import in Mode 2b) or relies on the worker to inline
+it (Mode 1). Pick the install mode per §8.3 first; then apply the
+corresponding snippet below.
 
-**Step 2.** Dispatch the hydration signal from a `useEffect` in the
-root client component. The companion's listener fires the apply on
-first dispatch.
+**Mode 1 — App Router** (`app/layout.tsx`):
 
-**App Router** (`app/layout.tsx`):
+```typescript
+'use client';
+import { useEffect } from 'react';
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('edge-del-v2-hydrated'));
+  }, []);
+  return <html><body>{children}</body></html>;
+}
+```
+
+That's the entire application-side install for Mode 1. The companion
+arrives in the document because the worker injected it before
+`</body>`; the `useEffect` just tells the companion that the root
+client tree finished hydrating.
+
+**Mode 1 — Pages Router** (`pages/_app.tsx`):
+
+```typescript
+import { useEffect } from 'react';
+
+export default function App({ Component, pageProps }) {
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('edge-del-v2-hydrated'));
+  }, []);
+  return <Component {...pageProps} />;
+}
+```
+
+**Mode 2 flavor 2a — App Router** (`app/layout.tsx`):
 
 ```typescript
 'use client';
@@ -906,10 +1062,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 ```
 
-**Pages Router** (`pages/_app.tsx` + `pages/_document.tsx`):
+**Mode 2 flavor 2a — Pages Router** (`pages/_app.tsx` + `pages/_document.tsx`):
 
 ```typescript
-// pages/_app.tsx
+// pages/_app.tsx — useEffect dispatch only
 import { useEffect } from 'react';
 
 export default function App({ Component, pageProps }) {
@@ -937,6 +1093,24 @@ export default function Document() {
   );
 }
 ```
+
+**Mode 2 flavor 2b — App Router** (`app/layout.tsx`):
+
+```typescript
+'use client';
+import { useEffect } from 'react';
+import '@/lib/vendor/edge-del-v2-companion.min.js'; // bundled into application JS artifact
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('edge-del-v2-hydrated'));
+  }, []);
+  return <html><body>{children}</body></html>;
+}
+```
+
+(For Pages Router 2b, move the `import` to `pages/_app.tsx` alongside
+the `useEffect`.)
 
 **Verification** — open the page after install and run in the console:
 
@@ -983,7 +1157,7 @@ actually runs (RSC vs client component boundary, Suspense gating).
   fires after `useEffect`, which runs after the entire root tree
   hydrates — correct timing for our purposes.
 
-#### 8.5.3 Adding a new framework
+#### 8.7.3 Adding a new framework
 
 The adapter pattern, generalised:
 
@@ -1001,23 +1175,47 @@ Svelte, SolidStart, Astro client-side islands, Qwik, etc. fit this
 pattern. Open a PR with the detection rung + install snippet and the
 existing tests cover everything else.
 
-### 8.6 CSP and nonces
+### 8.8 CSP and nonces
 
-The current implementation emits an inline `<script>` tag for the
-companion. Sites with strict CSP (`script-src 'self'` and no
-`unsafe-inline`) need a nonce. The SDK should mirror the nonce its
-existing snippet-injection code uses (`options.nonce` is already
-plumbed through `applyExperiments()`). Two-line addition to the
-injector.
+CSP requirements differ by install mode (see §8.3 for the trade-off
+summary).
 
-### 8.7 Bundle size
+**Mode 1 — worker inlines the companion.** Emits an inline
+`<script>` tag for the companion. Sites with strict CSP
+(`script-src 'self'` and no `'unsafe-inline'`) need either to enable
+`'unsafe-inline'` or to attach a per-request nonce. The SDK should
+mirror the nonce its existing snippet-injection code uses
+(`options.nonce` is already plumbed through `applyExperiments()`),
+applying it to the companion tag at injection time. Two-line addition
+to the injector.
 
-- Minified IIFE: ~4 KB
-- Gzipped: under 2 KB
+**Mode 2 — application code installs the companion.** No inline
+companion script in the worker output. CSP `script-src 'self'` is
+sufficient — the static-asset path (flavor 2a) is fetched from the
+same origin, and the bundled-import path (flavor 2b) loads as part
+of the application's main JavaScript artifact which is already
+allowed by `'self'`. Mode 2 is the recommended path for customers
+whose CSP cannot allow `'unsafe-inline'` and where per-request nonce
+plumbing through the worker is not operationally practical.
 
-Inlined into the HTML response, no additional HTTP request, no DNS
-lookup, no TLS handshake cost. Parsed in microseconds on modern
-hardware.
+Note that even in Mode 1, the inline JSON manifest tag
+(`<script type="application/json" id="edge-del-v2-manifest">…</script>`)
+is a non-executable content tag, not an inline script in the CSP
+sense — browsers do not evaluate JSON `<script>` tags as JavaScript
+and CSP `script-src` does not restrict them.
+
+### 8.9 Bundle size
+
+- Minified IIFE: ~11 KB (includes Nuxt, Backbone, and generic framework
+  adapters plus the `edge-del-v2-hydrated` custom-event listener)
+- Gzipped: ~3 KB
+
+In Mode 1, inlined into the HTML response — no additional HTTP request,
+no DNS lookup, no TLS handshake cost. Parsed in microseconds on modern
+hardware. In Mode 2 flavor 2a, served as a static asset under
+`script-src 'self'`. In Mode 2 flavor 2b, bundled into the application's
+main JS artifact alongside React/Vue/etc., contributing approximately
+11 KB raw / ~3 KB gzipped to the application bundle.
 
 
 9. Authoring guidance for experimentation teams
@@ -1282,7 +1480,7 @@ For the team deciding how to package this into a shipping product:
   who don't run a hydrating framework see the companion arrive in
   their response, parse it (zero work, the IIFE checks for the
   manifest and exits cleanly if absent or empty), and move on. Cost
-  to non-Vue customers: ~4 KB extra response. Trade-off acceptable.
+  to non-Vue customers: ~11 KB (~3 KB gzipped) extra response. Trade-off acceptable.
 
 - **Expose `Options.emitReinforcement = false`** as an opt-out for
   customers who explicitly do not want it. Same shape as existing

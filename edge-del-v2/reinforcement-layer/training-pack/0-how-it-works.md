@@ -168,8 +168,8 @@ is steps 3–5.
 │                                                                   │
 │  injection =                                                      │
 │    `<script type="application/json"                               │
-│      id="optly-companion-manifest">${json}</script>` +            │
-│    `<script id="optly-companion">${COMPANION_SOURCE}</script>`    │
+│      id="edge-del-v2-manifest">${json}</script>` +            │
+│    `<script id="edge-del-v2-companion">${COMPANION_SOURCE}</script>`    │
 │                                                                   │
 │  newBody = body.slice(0, body.lastIndexOf('</body>'))             │
 │          + injection                                              │
@@ -220,7 +220,7 @@ order, in the browser, without any extra HTTP requests.
 │                                                                   │
 │  Browser reaches the bottom of <body>. It executes:               │
 │                                                                   │
-│    <script id="optly-companion">                                  │
+│    <script id="edge-del-v2-companion">                                  │
 │      (function(){                                                 │
 │        // companion IIFE — runs immediately                       │
 │      })();                                                        │
@@ -323,7 +323,7 @@ The only thing the edge worker and the companion share is one
 inline JSON tag:
 
 ```html
-<script type="application/json" id="optly-companion-manifest">
+<script type="application/json" id="edge-del-v2-manifest">
 {
   "appliedAt": "edge",
   "ops": [
@@ -394,7 +394,7 @@ Bundle cost?                      ~10 KB (snippet) ~2 KB gzipped
 
    Confirms the worker post-processor ran.
 
-2. **View Source → search `optly-companion`**
+2. **View Source → search `edge-del-v2-companion`**
 
    You should find two `<script>` tags near the bottom of the body:
    the JSON manifest and the inline IIFE.

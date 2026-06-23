@@ -29,10 +29,22 @@ copy:
    into the response body. ~50 lines, lives next to your existing
    worker code.
 
-2. **Browser** — nothing to install if you accept the inline-script
-   approach (the worker delivers the companion in the SSR response).
-   If your CSP forbids inline scripts, install one npm package and
-   add one `<script>` tag.
+2. **Browser** — two equally-supported install modes for the
+   companion script, both producing identical runtime behavior on
+   the page. Pick whichever fits your operational model:
+   - **Mode 1** — the worker delivers the companion inline as part
+     of the SSR response. Your application code adds a one-line
+     `useEffect` (React) or `onMounted` (Vue) to signal hydration is
+     complete. Nothing else.
+   - **Mode 2** — your application code installs the companion
+     (either as a static asset referenced by `<script src>`, or
+     vendored into your main JS bundle through your existing
+     bundler). The worker omits the companion inline emit; the same
+     one-line hydration signal in your root component.
+   Decision factors: who owns the companion's deploy lifecycle
+   (worker team vs application team), CSP posture, and version
+   pinning preference. Full decision matrix in the engineering
+   handbook and CUSTOMER-GUIDE.md § 8.3.
 
 Engineer-facing details in `2-engineering-handbook.md`. The work is
 under a day for a senior engineer who has touched your edge worker

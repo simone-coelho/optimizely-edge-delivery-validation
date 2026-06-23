@@ -623,7 +623,7 @@ function boot(): void {
   //   1. An `edge-del-v2-hydrated` CustomEvent dispatched on `window`
   //      by the customer's app from a mount handler (React/Next.js
   //      `useEffect`, Vue `onMounted`, etc.). Preferred path for
-  //      React/Next.js per CUSTOMER-GUIDE.md §8.5.2 and portable to
+  //      React/Next.js per CUSTOMER-GUIDE.md §8.7.2 and portable to
   //      any framework where the customer wants explicit control of
   //      apply timing.
   //

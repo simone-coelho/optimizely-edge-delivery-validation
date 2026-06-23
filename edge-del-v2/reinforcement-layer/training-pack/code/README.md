@@ -14,7 +14,7 @@ these files directly into the customer's repository.
 | `ops.ts`                   | DOM operation primitives the companion uses (text, attribute, class, add, remove, move). Per-root reconciliation handles multi-root `insert_html` payloads. | Same folder as `companion.ts`. |
 | `types.ts`                 | Shared `Op` / `VariationManifest` types. Imported by both `companion.ts` and `worker-integration.ts`. | Same folder. |
 | `build-companion.mjs`      | Build script. Runs esbuild to produce `companion.min.js` (the minified IIFE) and `companion-source.mjs` (an ESM module exporting the IIFE as a string for the worker to inline). | Same folder. |
-| `companion.min.js`         | Pre-built minified browser IIFE — ~8 KB raw, under 2 KB gzipped. Drop into your public assets if your CSP forbids inline scripts and you can't run the build. | Reference build — you'll regenerate it via `build-companion.mjs` after any edit. |
+| `companion.min.js`         | Pre-built minified browser IIFE — ~11 KB raw, ~3 KB gzipped. Drop into your public assets for Mode 2 flavor 2a, or vendor under `lib/vendor/` for Mode 2 flavor 2b. See CUSTOMER-GUIDE.md § 8.2 for the Mode 2 install variants and § 8.3 for picking between Mode 1 and Mode 2. | Reference build — you'll regenerate it via `build-companion.mjs` after any edit. |
 
 ## How to use these files
 
