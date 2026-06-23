@@ -137,6 +137,9 @@ File tree
 
     edge-del-v2/
     ├─ README.md                              this document
+    ├─ INDEED-MIGRATION-BRIEFING.md           customer-facing kickoff memo for the
+    │                                            Indeed Performance Edge → Edge
+    │                                            Delivery migration conversation
     ├─ optimizely_guidance.txt                source customer guidance (the GitLab
     │                                            document that seeded Stream A)
     │
@@ -206,3 +209,10 @@ Where to start
 
   If you're orienting yourself for the first time:
     → This document. Then pick a stream above.
+
+  If you're preparing for the Indeed kickoff conversation:
+    → `INDEED-MIGRATION-BRIEFING.md`. Customer-side framing for the
+       Performance Edge → Edge Delivery migration — what Indeed
+       engineering owns, what Optimizely owns, the talking-points
+       strip, the open questions, and one-sentence answers to the
+       likely customer questions.
