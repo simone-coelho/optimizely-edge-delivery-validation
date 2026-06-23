@@ -1,0 +1,31 @@
+{
+  "startedAt": "2026-06-08T23:54:51.867Z",
+  "finishedAt": "2026-06-09T02:58:22.651Z",
+  "durationSec": "11010.8",
+  "perCell": 1000,
+  "profiles": [
+    "iOS",
+    "Web"
+  ],
+  "reachedTarget": true,
+  "counts": {
+    "attempts": 6264,
+    "ok": 6264,
+    "errors": 0,
+    "visitsWithEvents": 6244,
+    "decisionEvents": 14566,
+    "conversionEvents": 6198,
+    "cells": {
+      "iOS": {
+        "Variation B": 1072,
+        "Variation C": 1042,
+        "Control A": 1001
+      },
+      "Web": {
+        "Variation B": 1002,
+        "Variation C": 1088,
+        "Control A": 1059
+      }
+    }
+  }
+}

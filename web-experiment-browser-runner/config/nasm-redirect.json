@@ -1,0 +1,35 @@
+{
+  "name": "NASM PT Online — Redirect A/B/C (organic browser runner)",
+  "_account": "Ascend Learning, LLC",
+  "_note": "Drives real browser visitors to the experiment URL. The live Optimizely snippet buckets each fresh visitor and (for B/C) redirects to the variation's page; the variation is read from the final URL and confirmed via window.optimizely state. Events fire organically.",
+
+  "experimentId": "6470479964274688",
+  "startUrl": "https://www.nasm.org/personal-training-online-program-rev",
+
+  "variations": [
+    { "id": "4730831445426176", "name": "Variation B", "urlContains": "personal-training-online-program-rev-b" },
+    { "id": "6132417786806272", "name": "Variation C", "urlContains": "personal-training-online-program-rev-c" },
+    { "id": "4857929560489984", "name": "Control A",   "urlContains": "personal-training-online-program-rev", "isControl": true }
+  ],
+
+  "target": { "mode": "perVariation", "count": 1000, "maxVisits": 6000 },
+
+  "throttle": {
+    "concurrency": 4,
+    "minDelayBetweenStartsMs": 750,
+    "maxPerMinute": 0
+  },
+
+  "timing": {
+    "navTimeoutMs": 45000,
+    "settleMs": 6000
+  },
+
+  "browser": {
+    "headless": true,
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "blockResourceTypes": ["image", "media", "font"]
+  },
+
+  "dismissSelectors": []
+}

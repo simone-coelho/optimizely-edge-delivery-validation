@@ -1,0 +1,51 @@
+{
+  "generatedAt": "2026-06-08T19:32:29.888Z",
+  "experiment": "NASM PT Online — Redirect A/B/C Technical Test (SYNTHETIC)",
+  "sent": true,
+  "region": "US",
+  "endpoint": "https://logx.optimizely.com/v1/events",
+  "visitors": 50,
+  "seed": 777,
+  "assignment": "weighted",
+  "days": [
+    "2026-06-08"
+  ],
+  "perDay": {
+    "2026-06-08": 50
+  },
+  "perVariation": {
+    "4857929560489984": {
+      "name": "Control A",
+      "visitors": 13,
+      "conv": {
+        "25023950326_landing_page_rev_gen": 13
+      }
+    },
+    "4730831445426176": {
+      "name": "Variation B",
+      "visitors": 18,
+      "conv": {
+        "25023950326_landing_page_rev_gen": 18,
+        "25023950326_landing_page_rev_gen_b": 15
+      }
+    },
+    "6132417786806272": {
+      "name": "Variation C",
+      "visitors": 19,
+      "conv": {
+        "25023950326_landing_page_rev_gen": 19,
+        "25023950326_landing_page_rev_gen_c": 18
+      }
+    }
+  },
+  "totalConversions": 83,
+  "batches": 1,
+  "batchSize": 500,
+  "result": "sent",
+  "send": {
+    "ok": 1,
+    "failed": 0,
+    "eventsSent": 133
+  },
+  "failures": []
+}

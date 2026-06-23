@@ -1,0 +1,27 @@
+{
+  "startedAt": "2026-06-09T03:22:12.955Z",
+  "finishedAt": "2026-06-09T03:22:34.362Z",
+  "durationSec": "21.4",
+  "config": "nasm-redirect.json",
+  "target": {
+    "mode": "total",
+    "count": 4,
+    "maxVisits": 6000
+  },
+  "reachedTarget": true,
+  "counts": {
+    "attempts": 5,
+    "ok": 5,
+    "errors": 0,
+    "blocked": 0,
+    "unknown": 0,
+    "byVariation": {
+      "Variation B": 3,
+      "Variation C": 1,
+      "Control A": 1
+    },
+    "decisionEvents": 13,
+    "conversionEvents": 5,
+    "visitsWithEvents": 5
+  }
+}

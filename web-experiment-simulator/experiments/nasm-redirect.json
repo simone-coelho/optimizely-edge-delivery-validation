@@ -1,0 +1,59 @@
+{
+  "name": "NASM PT Online — Redirect A/B/C Technical Test (SYNTHETIC)",
+  "_account": "Ascend Learning, LLC",
+  "_note": "Redirect test: Control A stays on /rev, Variation B -> /rev-b, Variation C -> /rev-c. Each variation fires ONLY its own 'Visit Page' event (diagonal model). Today only; window starts at go-live via dates.startTime.",
+
+  "region": "US",
+  "account_id": "24796730409",
+  "project_id": "25023950326",
+  "campaign_id": "4736034529869824",
+  "experiment_id": "6470479964274688",
+
+  "variations": [
+    { "id": "4857929560489984", "name": "Control A",   "weight": 1 },
+    { "id": "4730831445426176", "name": "Variation B", "weight": 1 },
+    { "id": "6132417786806272", "name": "Variation C", "weight": 1 }
+  ],
+
+  "_model_note": "CORRECTED MODEL: the primary 'Rev Gen' event fires for ALL variations (it matches the ...program-rev URL substring, which all three destination pages contain), so the primary metric shows a real A/B/C comparison. Each variation ALSO fires its own destination-page event (Rev Gen B / Rev Gen C) as a diagnostic that the specific redirect landed.",
+  "metrics": [
+    {
+      "name": "Visit Page: Landing Page Rev Gen (PRIMARY - shared across all variations)",
+      "entity_id": "5507837602824192",
+      "key": "25023950326_landing_page_rev_gen",
+      "rates": { "4857929560489984": 0.99, "4730831445426176": 0.97, "6132417786806272": 0.98 }
+    },
+    {
+      "name": "Visit Page: Landing page Rev Gen B (B's destination)",
+      "entity_id": "6690921174007808",
+      "key": "25023950326_landing_page_rev_gen_b",
+      "rates": { "4857929560489984": 0, "4730831445426176": 0.97, "6132417786806272": 0 }
+    },
+    {
+      "name": "Visit Page: Landing Page Rev Gen C (C's destination)",
+      "entity_id": "6074471430225920",
+      "key": "25023950326_landing_page_rev_gen_c",
+      "rates": { "4857929560489984": 0, "4730831445426176": 0, "6132417786806272": 0.98 }
+    }
+  ],
+
+  "visitors": 6000,
+  "assignment": "weighted",
+  "seed": 1,
+
+  "dates": {
+    "days": ["2026-06-08"],
+    "diurnal": true,
+    "timezoneOffsetMinutes": -240,
+    "startTime": "2026-06-08T17:15:00Z"
+  },
+
+  "conversion": {
+    "delaySecondsMin": 1,
+    "delaySecondsMax": 20
+  },
+
+  "client_name": "synthetic-data-harness",
+  "anonymize_ip": true,
+  "outputDir": "runs"
+}

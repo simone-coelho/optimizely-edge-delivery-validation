@@ -1,0 +1,22 @@
+{
+  "name": "optimizely-web-experiment-simulator",
+  "version": "1.0.0",
+  "type": "commonjs",
+  "description": "Generate synthetic bucketing + conversion events for an Optimizely Web Experimentation (browser-snippet) experiment, with controlled timestamps for date backfill. Posts to the Optimizely Event API.",
+  "license": "MIT",
+  "author": "Simone Coelho",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "simulate": "node simulate.js"
+  },
+  "keywords": [
+    "optimizely",
+    "web-experimentation",
+    "synthetic-data",
+    "event-api",
+    "ab-testing",
+    "bucketing"
+  ]
+}

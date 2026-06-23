@@ -1,0 +1,16 @@
+{
+  "name": "optimizely-web-experiment-browser-runner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Drives REAL headless-browser visitors through an Optimizely Web Experimentation experiment — organic snippet load, bucketing, redirects, and event dispatch — with throttling and governance. The non-synthetic counterpart to web-experiment-simulator.",
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "probe": "node probe.js",
+    "run": "node run.js",
+    "install-browser": "playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.60.0"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "NASM CES — A/A no-redirect (iOS parity validation)",
+  "_account": "Ascend Learning, LLC",
+  "_note": "A/A test, no redirect. Goal: confirm iOS does NOT lose decisions or events vs the redirect test. Both variations sit on the same URL, so the variation is read from window.optimizely state (variationByState). Conversion = clicking the same 'Add to Cart' button each visit (fires an add_to_cart event, then navigates to /cart). Customer signed off; data to be discarded.",
+
+  "experimentId": "5856770006974464",
+  "startUrl": "https://www.nasm.org/products/corrective-exercise-specialization",
+
+  "variationByState": true,
+  "variations": [
+    { "id": "6335347878002688", "name": "Variation 1" },
+    { "id": "5076142185512960", "name": "Variation 2" }
+  ],
+
+  "clickSelector": "button.pricing-card__enroll-btn",
+  "conversionMatch": "add_to_cart",
+  "clickWaitMs": 2500,
+
+  "target": { "mode": "total", "count": 4000 },
+
+  "timing": { "navTimeoutMs": 45000, "settleMs": 5000 },
+
+  "browser": {
+    "headless": true,
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "blockResourceTypes": ["image", "media", "font"]
+  }
+}

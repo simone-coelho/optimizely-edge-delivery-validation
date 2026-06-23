@@ -1,0 +1,48 @@
+{
+  "name": "Homepage CTA — A/B test (SYNTHETIC)",
+  "_comment": "Replace every *_id below with your experiment's real IDs. See README → 'Where to get the IDs'. account_id, campaign_id (the layer), experiment_id, each variation id, and each metric entity_id are all visible via window.optimizely.get('data') in the browser console on a page where the snippet runs.",
+
+  "region": "US",
+  "account_id": "REPLACE_ACCOUNT_ID",
+  "project_id": "REPLACE_PROJECT_ID",
+  "campaign_id": "REPLACE_LAYER_OR_CAMPAIGN_ID",
+  "experiment_id": "REPLACE_EXPERIMENT_ID",
+
+  "variations": [
+    { "id": "REPLACE_VARIATION_ID_ORIGINAL", "name": "Original",     "weight": 50 },
+    { "id": "REPLACE_VARIATION_ID_VARIANT",  "name": "Variation #1", "weight": 50 }
+  ],
+
+  "metrics": [
+    {
+      "name": "Primary CTA click",
+      "entity_id": "REPLACE_EVENT_ID",
+      "key": "cta_click",
+      "rates": {
+        "REPLACE_VARIATION_ID_ORIGINAL": 0.10,
+        "REPLACE_VARIATION_ID_VARIANT":  0.12
+      }
+    }
+  ],
+
+  "visitors": 10000,
+  "assignment": "weighted",
+  "seed": 1,
+
+  "dates": {
+    "days": ["2026-06-06", "2026-06-07", "2026-06-08"],
+    "weights": [0.35, 0.35, 0.30],
+    "diurnal": true,
+    "timezoneOffsetMinutes": 0
+  },
+
+  "conversion": {
+    "delaySecondsMin": 30,
+    "delaySecondsMax": 1800
+  },
+
+  "client_name": "synthetic-data-harness",
+  "client_version": "1.0.0",
+  "anonymize_ip": true,
+  "outputDir": "runs"
+}

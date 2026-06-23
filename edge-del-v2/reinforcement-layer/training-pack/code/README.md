@@ -1,6 +1,6 @@
 # Drop-in code — copy these files into your project
 
-These six files are the entire reinforcement layer. There is no npm
+These seven files are the entire reinforcement layer. There is no npm
 package to install — Optimizely hasn't published one yet. You vendor
 these files directly into the customer's repository.
 
@@ -9,6 +9,7 @@ these files directly into the customer's repository.
 | File                       | What it is                                                                                       | Goes where in the customer's repo |
 | -------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------- |
 | `worker-integration.ts`    | The Cloudflare worker post-processor. Wraps `applyExperiments()`, scans the response for Optimizely markers, injects the companion `<script>` before `</body>`. | Wherever the customer's edge worker entry lives — typically `src/worker/` or `server/`. |
+| `should-process.ts`        | Request filter — returns `true` only for requests that have a realistic chance of being HTML the variation can land in. Called at the very top of the worker's `fetch` handler so asset/JSON/API requests bypass the SDK and post-processor entirely. See `../4-deployment-routing.md`. | Same folder as `worker-integration.ts`. |
 | `companion.ts`             | The browser companion (TypeScript source). Reads the inline manifest after the framework hydrates and idempotently replays variation ops. | `src/optimizely-companion/` or equivalent. |
 | `ops.ts`                   | DOM operation primitives the companion uses (text, attribute, class, add, remove, move). Per-root reconciliation handles multi-root `insert_html` payloads. | Same folder as `companion.ts`. |
 | `types.ts`                 | Shared `Op` / `VariationManifest` types. Imported by both `companion.ts` and `worker-integration.ts`. | Same folder. |
@@ -52,10 +53,11 @@ artifacts regenerate on every deploy.
 
 The customer already has a worker entry file calling
 `applyExperiments()`. Replace the body of its `fetch` handler with a
-call to `handleRequestWithReinforcement` exported from
-`worker-integration.ts`:
+`shouldProcess()` filter followed by a call to
+`handleRequestWithReinforcement`:
 
 ```ts
+import { shouldProcess }                  from './optimizely-companion/should-process';
 import { handleRequestWithReinforcement } from './optimizely-companion/worker-integration';
 import { COMPANION_SOURCE }                from './optimizely-companion/companion-source.mjs';
 
@@ -66,6 +68,14 @@ import { COMPANION_SOURCE }                from './optimizely-companion/companio
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    // Asset / API / non-HTML requests bypass the reinforcement
+    // worker entirely — straight passthrough to origin.
+    // See ../4-deployment-routing.md for the full filtering model
+    // (this is Layer 2; ship a `_routes.json` for Layer 1).
+    if (!shouldProcess(request)) {
+      return yourSsrHandler.fetch(request, env, ctx);
+    }
+
     return handleRequestWithReinforcement(
       request,
       env,

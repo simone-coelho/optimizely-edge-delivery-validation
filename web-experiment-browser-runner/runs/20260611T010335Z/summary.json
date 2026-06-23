@@ -1,0 +1,25 @@
+{
+  "startedAt": "2026-06-11T01:03:35.328Z",
+  "finishedAt": "2026-06-11T01:04:33.592Z",
+  "durationSec": "58.3",
+  "config": "nasm-ces-aa.json",
+  "target": {
+    "mode": "total",
+    "count": 8
+  },
+  "reachedTarget": true,
+  "counts": {
+    "attempts": 11,
+    "ok": 11,
+    "errors": 0,
+    "blocked": 0,
+    "unknown": 0,
+    "byVariation": {
+      "Variation 1": 4,
+      "Variation 2": 7
+    },
+    "decisionEvents": 11,
+    "conversionEvents": 11,
+    "visitsWithEvents": 11
+  }
+}

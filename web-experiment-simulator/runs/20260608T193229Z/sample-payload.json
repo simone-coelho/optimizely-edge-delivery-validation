@@ -1,0 +1,98 @@
+{
+  "account_id": "24796730409",
+  "anonymize_ip": true,
+  "client_name": "synthetic-data-harness",
+  "client_version": "1.0.0",
+  "enrich_decisions": true,
+  "visitors": [
+    {
+      "visitor_id": "oeu1780816807816r0.6329670422710478",
+      "attributes": [],
+      "snapshots": [
+        {
+          "decisions": [
+            {
+              "campaign_id": "4736034529869824",
+              "experiment_id": "6470479964274688",
+              "variation_id": "4730831445426176"
+            }
+          ],
+          "events": [
+            {
+              "entity_id": "4736034529869824",
+              "key": "campaign_activated",
+              "type": "campaign_activated",
+              "timestamp": 1780939419445,
+              "uuid": "3a064539-8721-4eab-9fc3-30128e860e54"
+            }
+          ]
+        },
+        {
+          "events": [
+            {
+              "entity_id": "5507837602824192",
+              "key": "25023950326_landing_page_rev_gen",
+              "timestamp": 1780939434559,
+              "uuid": "22473bd5-85be-4d8c-bd77-3dd7aab0892d"
+            }
+          ]
+        },
+        {
+          "events": [
+            {
+              "entity_id": "6690921174007808",
+              "key": "25023950326_landing_page_rev_gen_b",
+              "timestamp": 1780939435140,
+              "uuid": "8a2910ae-75f4-414c-8b89-dd35b90fc478"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "visitor_id": "oeu1780557176901r0.9279480485711247",
+      "attributes": [],
+      "snapshots": [
+        {
+          "decisions": [
+            {
+              "campaign_id": "4736034529869824",
+              "experiment_id": "6470479964274688",
+              "variation_id": "4730831445426176"
+            }
+          ],
+          "events": [
+            {
+              "entity_id": "4736034529869824",
+              "key": "campaign_activated",
+              "type": "campaign_activated",
+              "timestamp": 1780940754395,
+              "uuid": "fb77c8f3-0156-42b9-98fb-f58f4e1cb197"
+            }
+          ]
+        },
+        {
+          "events": [
+            {
+              "entity_id": "5507837602824192",
+              "key": "25023950326_landing_page_rev_gen",
+              "timestamp": 1780940772906,
+              "uuid": "0a817ecf-17e8-47fc-8d64-63df35a68caa"
+            }
+          ]
+        },
+        {
+          "events": [
+            {
+              "entity_id": "6690921174007808",
+              "key": "25023950326_landing_page_rev_gen_b",
+              "timestamp": 1780940774053,
+              "uuid": "1d23511e-6336-487d-b73a-377d43942cd7"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "project_id": "25023950326"
+}

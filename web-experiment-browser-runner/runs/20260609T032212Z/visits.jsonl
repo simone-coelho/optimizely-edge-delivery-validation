@@ -1,0 +1,5 @@
+{"t":"2026-06-09T03:22:20.080Z","ok":true,"variation":"Variation B","finalUrl":"https://www.nasm.org/personal-training-online-program-rev-b","logxHits":3,"decisionHits":3,"conversionHits":1,"ms":7117,"redirect":true}
+{"t":"2026-06-09T03:22:20.731Z","ok":true,"variation":"Control A","finalUrl":"https://www.nasm.org/personal-training-online-program-rev","logxHits":2,"decisionHits":1,"conversionHits":1,"ms":7022}
+{"t":"2026-06-09T03:22:27.158Z","ok":true,"variation":"Variation B","finalUrl":"https://www.nasm.org/personal-training-online-program-rev-b","logxHits":3,"decisionHits":3,"conversionHits":1,"ms":7065,"redirect":true}
+{"t":"2026-06-09T03:22:27.859Z","ok":true,"variation":"Variation C","finalUrl":"https://www.nasm.org/personal-training-online-program-rev-c","logxHits":3,"decisionHits":3,"conversionHits":1,"ms":7017,"redirect":true}
+{"t":"2026-06-09T03:22:34.224Z","ok":true,"variation":"Variation B","finalUrl":"https://www.nasm.org/personal-training-online-program-rev-b","logxHits":3,"decisionHits":3,"conversionHits":1,"ms":7050,"redirect":true}

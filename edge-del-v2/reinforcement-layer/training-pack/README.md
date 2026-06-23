@@ -1,6 +1,6 @@
 # Edge Delivery + Hydration Reinforcement — Training Pack
 
-Four documents and one folder of drop-in source. Start with
+Five documents and one folder of drop-in source. Start with
 `0-how-it-works.md`, then jump to the doc for your role.
 
 ```
@@ -34,6 +34,16 @@ Four documents and one folder of drop-in source. Start with
                                    the exact code to give engineering,
                                    validation steps, common pitfalls.
                                    ≈ 4 pages.
+
+4-deployment-routing.md          ← OPERATIONAL. Read after install.
+                                   How to filter out asset / non-HTML
+                                   requests so the worker only runs
+                                   where it can deliver value.
+                                   Three-layer model (_routes.json,
+                                   shouldProcess() helper, content-
+                                   type check). Verification + cost
+                                   framing.
+                                   ≈ 3 pages.
 ```
 
 All three docs reference one shared folder of drop-in source files:

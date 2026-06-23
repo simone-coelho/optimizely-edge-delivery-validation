@@ -1,0 +1,22 @@
+{
+  "updatedAt": "2026-06-09T03:18:31.217Z",
+  "perCell": 1000,
+  "profiles": [
+    "iOS"
+  ],
+  "counts": {
+    "attempts": 629,
+    "ok": 629,
+    "errors": 0,
+    "visitsWithEvents": 629,
+    "decisionEvents": 1481,
+    "conversionEvents": 623,
+    "cells": {
+      "iOS": {
+        "Variation B": 211,
+        "Variation C": 221,
+        "Control A": 197
+      }
+    }
+  }
+}

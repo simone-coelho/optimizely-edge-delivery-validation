@@ -128,6 +128,34 @@ companion is hosted as a same-origin static asset and pulled in via
 
 ---
 
+## Routing & cost — the worker must only run on HTML
+
+The worker MUST NOT run on every request. Assets, JSON APIs, fonts,
+images, third-party callbacks should bypass it entirely. Three-layer
+model, all three required for production:
+
+1. **`_routes.json`** (Cloudflare Pages) or **`wrangler.toml` routes**
+   (standalone Worker). Excludes asset directories so requests never
+   invoke the worker. **Free at runtime.**
+2. **`shouldProcess()` early return** at the top of the worker `fetch`
+   handler. Catches anything that slips past Layer 1 — file
+   extensions outside asset directories, non-GET verbs, Accept
+   headers that don't include `text/html`. **~few hundred microseconds
+   on bypass.**
+3. **Content-type check** on the SSR response (already in
+   `worker-integration.ts`). Catches the case where the request
+   looked like HTML but the origin returned JSON / a redirect / an
+   error page.
+
+Helper: `reinforcement-layer/training-pack/code/should-process.ts`.
+Full guide with sample `_routes.json` and verification checklist:
+`reinforcement-layer/training-pack/4-deployment-routing.md`.
+
+The wrong default is "the worker runs on everything." The right
+default is "the worker runs only where it can deliver value."
+
+---
+
 ## Verification — what to check after install
 
 | Where | What | Healthy value |
@@ -185,16 +213,35 @@ Documented in detail: `CUSTOMER-GUIDE.md` § 9.1.
 
 ## What changes vs the snippet-only setup
 
-| | Snippet only | Edge + companion |
-|---|---|---|
-| Variation in HTML response? | No | Yes |
-| Visible at first paint? | No | Yes |
-| Visible to SEO crawlers? | No | Yes |
-| Survives hydration on Vue/React? | n/a | Yes (companion replays) |
-| Survives SPA navigation? | No | Yes (companion replays) |
-| Extra HTTP request? | 1 (snippet) | 0 (companion inlined) |
-| Per-experiment client code? | sometimes | never |
-| Bundle cost | ~10 KB (snippet) | ~2 KB gzipped (companion) |
+| | Snippet only (vanilla) | Snippet + companion (`snippet-pack/`) | Edge + companion (`training-pack/`) |
+|---|---|---|---|
+| Variation in HTML response? | No | No | Yes |
+| Visible at first paint? | No (flicker) | No (flicker) | Yes |
+| Visible to SEO crawlers? | No | No | Yes |
+| Survives hydration on Vue/React? | n/a | Yes (companion replays from snippet data) | Yes (companion replays from inline manifest + snippet data) |
+| Survives SPA navigation? | Partial (DSW) | Yes (companion replays per route) | Yes |
+| Survives in-place region re-render (Backbone view swap, mini-cart, facet filter)? | Partial (DSW) | Yes (companion's `observeRerenders`) | Yes |
+| Extra HTTP request? | 1 (snippet) | 1 (snippet) | 0 (companion inlined) |
+| Per-experiment client code? | sometimes | never | never |
+| Bundle cost | ~10 KB (snippet) | ~10 KB snippet + ~10 KB companion | ~10 KB snippet + ~2 KB gzipped inline companion |
+
+## Snippet-only deployments — the `snippet-pack/`
+
+For customers who are NOT on Edge Delivery (vanilla Optimizely Web
+Experimentation, snippet pasted in `<head>`), the companion still
+applies — it auto-selects an adapter based on the page's framework
+and replays variations on every SPA navigation and in-place region
+re-render. There is no edge manifest; the companion extracts ops
+directly from `window.optimizely.get('data')` at runtime.
+
+The primary documented deployment is **SuiteCommerce Advanced**
+(Backbone.js), used by Mystery Ranch and other NetSuite storefronts.
+
+- Customer-facing guide: `reinforcement-layer/snippet-pack/README.md`
+- SuiteCommerce config + revenue helper: `reinforcement-layer/snippet-pack/code/`
+- Same engine: `reinforcement-layer/training-pack/code/companion.ts`
+  (with `framework: 'backbone'` config). The companion's adapter layer
+  was designed to serve both deployment paths from a single source.
 
 ---
 
