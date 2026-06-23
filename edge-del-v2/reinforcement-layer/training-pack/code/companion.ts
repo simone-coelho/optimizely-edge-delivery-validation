@@ -50,12 +50,25 @@ declare global {
       push?: (cmd: any) => void;
     };
     useNuxtApp?: () => { hook?: (event: string, cb: () => void) => void };
+    Backbone?: {
+      history?: {
+        started?: boolean;
+        on?: (event: string, cb: (...args: any[]) => void) => void;
+        fragment?: string;
+      };
+    };
     __EDGE_DEL_V2__?: {
       manifest:    VariationManifest | null;
       ranAt:       number | null;
       events:      Array<{ at: number; kind: string; detail?: unknown }>;
       routeCount:  number;
       activeRoute: string | null;
+      adapter?:    string;
+    };
+    __EDGE_DEL_V2_CONFIG__?: {
+      framework?: 'auto' | 'backbone' | 'nuxt' | 'generic';
+      regionRoots?: string[];
+      rerenderDebounceMs?: number;
     };
   }
 }
@@ -335,10 +348,41 @@ async function applyForRoute(reason: string): Promise<void> {
 }
 
 
-// ── URL-change detection: history API patch + popstate + Nuxt
-//    `page:finish` hook. We fire `applyForRoute` after a tick so the
-//    framework router has a moment to render the new view.
-function armRouteListeners(onRoute: (reason: string) => void): void {
+// ─── Framework adapters ─────────────────────────────────────────────────
+//
+// The extract+replay engine above (changeToOps, opsForCurrentUrl,
+// applyOpSet, applyForRoute) is framework-agnostic. What VARIES between
+// deployments is how the companion learns three things:
+//
+//   1. when the framework has finished its initial render and the
+//      companion's first apply can run;
+//   2. when the URL has changed (SPA navigation);
+//   3. when a region of the DOM has been re-rendered in place WITHOUT a
+//      URL change (mini-cart open, facet filter, quantity update — the
+//      common case on storefronts).
+//
+// Each FrameworkAdapter answers those three questions for one framework.
+// Adapters are auto-selected by sniffing for framework globals; a
+// `window.__EDGE_DEL_V2_CONFIG__ = { framework: 'backbone' }` override
+// lets the customer pin one explicitly and also supply `regionRoots`
+// (selectors for the in-place re-render observer).
+
+interface FrameworkAdapter {
+  name: string;
+  detect(): boolean;
+  whenReady(cb: () => void): void;
+  onRouteChange(cb: (reason: string) => void): void;
+  observeRerenders?(roots: string[], cb: (reason: string) => void): void;
+}
+
+// Shared history-API patch. pushState/replaceState/popstate is the
+// lowest-common-denominator route-change signal. Nuxt's `page:finish`
+// hook and Backbone's `Backbone.history.on('route', …)` are layered on
+// top of this where available — they fire AFTER the framework has
+// rendered, which is what we want, but the history patch is still
+// armed as a fallback for third-party code that navigates outside the
+// router (e.g. SCA modules calling history.pushState directly).
+function patchHistory(onRoute: (reason: string) => void): void {
   const wrap = (name: 'pushState' | 'replaceState'): void => {
     const orig = history[name];
     history[name] = function (...args: any[]) {
@@ -354,90 +398,279 @@ function armRouteListeners(onRoute: (reason: string) => void): void {
   } catch (err) { pulse('route:history-patch-failed', String(err)); }
 
   window.addEventListener('popstate', () => setTimeout(() => onRoute('popstate'), 50));
+}
 
-  // Nuxt-specific: page:finish fires after the new route's component is
-  // mounted. Cleanest signal for Vue/Nuxt apps.
-  try {
-    const useNuxt = (window as any).useNuxtApp;
-    if (typeof useNuxt === 'function') {
-      const app = useNuxt();
-      if (app?.hook) {
-        app.hook('page:finish', () => setTimeout(() => onRoute('nuxt.page:finish'), 0));
-        pulse('route:nuxt-hook-armed');
+// ── Nuxt / Vue adapter — preserves the prior companion's behaviour
+//    verbatim. Detection looks for the Nuxt composable global or the
+//    standard hydration markers (#__nuxt, [data-server-rendered], or a
+//    Vue 3 root with __vue_app__).
+const nuxtAdapter: FrameworkAdapter = {
+  name: 'nuxt',
+  detect(): boolean {
+    if (typeof (window as any).useNuxtApp === 'function') return true;
+    if (document.querySelector('#__nuxt, [data-server-rendered]')) return true;
+    const vueRoot = document.querySelector('#app');
+    if (vueRoot && (vueRoot as any).__vue_app__) return true;
+    return false;
+  },
+  whenReady(cb): void {
+    const tryNuxt = (): boolean => {
+      const useNuxt = (window as any).useNuxtApp;
+      if (typeof useNuxt === 'function') {
+        try {
+          const app = useNuxt();
+          if (app && typeof app.hook === 'function') {
+            app.hook('app:mounted', () => cb());
+            pulse('hydration:nuxt-hook-armed');
+            return true;
+          }
+        } catch { /* fall through */ }
       }
-    }
-  } catch { /* fall through silently */ }
-}
+      return false;
+    };
+    const tryVue = (): boolean => {
+      const root = document.querySelector('#__nuxt, #app, [data-server-rendered]');
+      const vueApp = (root as any)?.__vue_app__;
+      if (vueApp && vueApp._instance) {
+        if (vueApp._instance.isMounted) { cb(); return true; }
+        let tries = 0;
+        const iv = setInterval(() => {
+          if (vueApp._instance.isMounted || tries++ > 60) {
+            clearInterval(iv);
+            cb();
+          }
+        }, 16);
+        pulse('hydration:vue-poll-armed');
+        return true;
+      }
+      return false;
+    };
+    const tryIdle = (): void => {
+      const ric = (window as any).requestIdleCallback as
+        | ((c: () => void, opts?: { timeout: number }) => number)
+        | undefined;
+      if (ric) { ric(cb, { timeout: 500 }); pulse('hydration:idle-armed'); }
+      else     { setTimeout(cb, 50);        pulse('hydration:timeout-armed'); }
+    };
 
-
-// ── Hydration-end signal: for the FIRST apply only. After that we use
-//    route-change events instead.
-function whenHydrated(cb: () => void): void {
-  const tryNuxt = (): boolean => {
-    const useNuxt = (window as any).useNuxtApp;
-    if (typeof useNuxt === 'function') {
-      try {
-        const app = useNuxt();
-        if (app && typeof app.hook === 'function') {
-          app.hook('app:mounted', () => cb());
-          pulse('hydration:nuxt-hook-armed');
-          return true;
-        }
-      } catch { /* fall through */ }
-    }
-    return false;
-  };
-  const tryVue = (): boolean => {
-    const root = document.querySelector('#__nuxt, #app, [data-server-rendered]');
-    const vueApp = (root as any)?.__vue_app__;
-    if (vueApp && vueApp._instance) {
-      if (vueApp._instance.isMounted) { cb(); return true; }
-      let tries = 0;
-      const iv = setInterval(() => {
-        if (vueApp._instance.isMounted || tries++ > 60) {
-          clearInterval(iv);
-          cb();
-        }
-      }, 16);
-      pulse('hydration:vue-poll-armed');
-      return true;
-    }
-    return false;
-  };
-  const tryIdle = (): void => {
-    const ric = (window as any).requestIdleCallback as
-      | ((c: () => void, opts?: { timeout: number }) => number)
-      | undefined;
-    if (ric) { ric(cb, { timeout: 500 }); pulse('hydration:idle-armed'); }
-    else     { setTimeout(cb, 50);        pulse('hydration:timeout-armed'); }
-  };
-
-  if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    if (!tryNuxt() && !tryVue()) tryIdle();
-  } else {
-    document.addEventListener('DOMContentLoaded', () => {
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
       if (!tryNuxt() && !tryVue()) tryIdle();
-    }, { once: true });
+    } else {
+      document.addEventListener('DOMContentLoaded', () => {
+        if (!tryNuxt() && !tryVue()) tryIdle();
+      }, { once: true });
+    }
+  },
+  onRouteChange(cb): void {
+    patchHistory(cb);
+    try {
+      const useNuxt = (window as any).useNuxtApp;
+      if (typeof useNuxt === 'function') {
+        const app = useNuxt();
+        if (app?.hook) {
+          app.hook('page:finish', () => setTimeout(() => cb('nuxt.page:finish'), 0));
+          pulse('route:nuxt-hook-armed');
+        }
+      }
+    } catch { /* fall through silently */ }
   }
+};
+
+// ── Backbone adapter — for SuiteCommerce Advanced and other Backbone
+//    SPAs. Three signals layered:
+//
+//      whenReady          → Backbone.history.started, then a rAF so the
+//                           first matched route's view renders before
+//                           we apply. Falls back to window.load.
+//      onRouteChange      → Backbone.history.on('route', …) fires
+//                           AFTER the route handler runs (view rendered).
+//                           hashchange covers Backbone with pushState:
+//                           false. patchHistory covers third-party
+//                           navigations.
+//      observeRerenders   → scoped MutationObserver per configured
+//                           region root (cart, facets, mini-cart, etc).
+//                           Re-arms automatically if Backbone swaps the
+//                           container element.
+const backboneAdapter: FrameworkAdapter = {
+  name: 'backbone',
+  detect(): boolean {
+    return typeof (window as any).Backbone?.history !== 'undefined';
+  },
+  whenReady(cb): void {
+    const Backbone = (window as any).Backbone;
+    const tryReady = (): boolean => {
+      if (Backbone?.history?.started === true) {
+        requestAnimationFrame(() => cb());
+        pulse('hydration:backbone-ready');
+        return true;
+      }
+      return false;
+    };
+    if (tryReady()) return;
+
+    let tries = 0;
+    const iv = setInterval(() => {
+      if (tryReady()) { clearInterval(iv); return; }
+      if (tries++ > 120) {  // ~2 s at 16 ms
+        clearInterval(iv);
+        if (document.readyState === 'complete') {
+          setTimeout(cb, 50);
+          pulse('hydration:backbone-fallback-load');
+        } else {
+          window.addEventListener('load', () => setTimeout(cb, 50), { once: true });
+          pulse('hydration:backbone-fallback-onload');
+        }
+      }
+    }, 16);
+  },
+  onRouteChange(cb): void {
+    const Backbone = (window as any).Backbone;
+    try {
+      if (Backbone?.history?.on) {
+        Backbone.history.on('route', (_router: any, name: string) => {
+          setTimeout(() => cb(`backbone:route:${name || 'unnamed'}`), 0);
+        });
+        pulse('route:backbone-hook-armed');
+      }
+    } catch (err) { pulse('route:backbone-hook-failed', String(err)); }
+
+    window.addEventListener('hashchange', () => setTimeout(() => cb('hashchange'), 50));
+    patchHistory(cb);
+  },
+  observeRerenders(roots, cb): void {
+    if (!roots.length) return;
+    const cfg = (window as any).__EDGE_DEL_V2_CONFIG__ || {};
+    const debounceMs = typeof cfg.rerenderDebounceMs === 'number' ? cfg.rerenderDebounceMs : 75;
+
+    let timer: any = null;
+    const fire = (reason: string) => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { timer = null; cb(reason); }, debounceMs);
+    };
+
+    const observed = new WeakSet<Element>();
+    const armOne = (sel: string): void => {
+      const el = document.querySelector(sel);
+      if (!el) { pulse('rerender:root-not-found', sel); return; }
+      if (observed.has(el)) return;
+      observed.add(el);
+      try {
+        const mo = new MutationObserver(() => fire(`rerender:${sel}`));
+        mo.observe(el, { childList: true, subtree: true });
+        pulse('rerender:armed', sel);
+      } catch (err) { pulse('rerender:observe-failed', { sel, err: String(err) }); }
+    };
+
+    for (const r of roots) armOne(r);
+
+    // Re-arm any root that disappears and reappears (Backbone often
+    // swaps a region's container element entirely when re-rendering).
+    try {
+      const reArm = new MutationObserver(() => {
+        for (const sel of roots) armOne(sel);
+      });
+      reArm.observe(document.body, { childList: true, subtree: true });
+    } catch (err) { pulse('rerender:rearm-failed', String(err)); }
+  }
+};
+
+// ── Generic adapter — pushState/replaceState/popstate only. Last in
+//    the priority list so we always have a fallback.
+const genericAdapter: FrameworkAdapter = {
+  name: 'generic',
+  detect(): boolean { return true; },
+  whenReady(cb): void {
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      setTimeout(cb, 50);
+    } else {
+      document.addEventListener('DOMContentLoaded', () => setTimeout(cb, 50), { once: true });
+    }
+  },
+  onRouteChange(cb): void {
+    patchHistory(cb);
+  }
+};
+
+const ADAPTERS: FrameworkAdapter[] = [backboneAdapter, nuxtAdapter, genericAdapter];
+
+function selectAdapter(): FrameworkAdapter {
+  const cfg = (window as any).__EDGE_DEL_V2_CONFIG__ || {};
+  if (cfg.framework && cfg.framework !== 'auto') {
+    const pinned = ADAPTERS.find(a => a.name === cfg.framework);
+    if (pinned) { pulse('adapter:pinned', cfg.framework); return pinned; }
+    pulse('adapter:pin-unknown', cfg.framework);
+  }
+  for (const a of ADAPTERS) {
+    if (a.detect()) { pulse('adapter:auto-selected', a.name); return a; }
+  }
+  pulse('adapter:fallback-generic');
+  return genericAdapter;
 }
 
 
-// ── Boot — wire up initial apply and route listeners.
+// ── Boot — pick the adapter for this page, wire its three signals
+//    through the framework-agnostic apply functions defined above.
 function boot(): void {
   pulse('boot:armed', { url: window.location.href });
 
-  // Initial apply (fast path from inline manifest).
-  whenHydrated(() => {
-    applyInitial();
-    // ALSO trigger a snippet-data apply on the initial route, in case
-    // the inline manifest is stale or empty (defensive).
-    applyForRoute('initial-hydration-followup');
-  });
+  const adapter = selectAdapter();
+  bus().adapter = adapter.name;
+  const cfg = (window as any).__EDGE_DEL_V2_CONFIG__ || {};
+  const regionRoots: string[] = Array.isArray(cfg.regionRoots) ? cfg.regionRoots : [];
 
-  // Subsequent route changes.
-  armRouteListeners((reason) => {
+  // One-shot initial apply. Two independent signals can trigger it:
+  //
+  //   1. An `edge-del-v2-hydrated` CustomEvent dispatched on `window`
+  //      by the customer's app from a mount handler (React/Next.js
+  //      `useEffect`, Vue `onMounted`, etc.). Preferred path for
+  //      React/Next.js per CUSTOMER-GUIDE.md §8.5.2 and portable to
+  //      any framework where the customer wants explicit control of
+  //      apply timing.
+  //
+  //   2. The auto-selected framework adapter's hydration hook
+  //      (Nuxt `app:mounted`, Backbone `history.started + rAF`,
+  //      generic `DOMContentLoaded + 50 ms`).
+  //
+  // Whichever fires first wins; the other becomes a no-op.
+  let appliedInitial = false;
+  const applyInitialOnce = (source: string): void => {
+    if (appliedInitial) { pulse('hydration:duplicate-signal', { source }); return; }
+    appliedInitial = true;
+    pulse('hydration:signal-received', { source });
+    applyInitial();
+    applyForRoute('initial-ready-followup');
+  };
+
+  // Customer-dispatched event — listener is registered unconditionally
+  // for every adapter, so any customer can opt into explicit apply
+  // timing by dispatching `edge-del-v2-hydrated` regardless of which
+  // framework was auto-selected. `{ once: true }` self-removes after
+  // the first dispatch.
+  window.addEventListener(
+    'edge-del-v2-hydrated',
+    () => applyInitialOnce('customer-event'),
+    { once: true }
+  );
+  pulse('hydration:custom-event-armed');
+
+  // Framework adapter's hydration signal. Same `applyInitialOnce`
+  // gate, so if the customer event already fired this is a no-op.
+  adapter.whenReady(() => applyInitialOnce(`adapter:${adapter.name}`));
+
+  // SPA navigation.
+  adapter.onRouteChange((reason) => {
     applyForRoute(reason).catch(err => pulse('route:error', String(err)));
   });
+
+  // Region re-renders without a URL change (Backbone view swaps inside
+  // a route, mini-cart open, facet filter change, quantity update).
+  // Only adapters that opt in see this; only fires when the customer
+  // has supplied regionRoots in the config.
+  if (adapter.observeRerenders && regionRoots.length > 0) {
+    adapter.observeRerenders(regionRoots, (reason) => {
+      applyForRoute(reason).catch(err => pulse('rerender:error', String(err)));
+    });
+  }
 }
 
 boot();

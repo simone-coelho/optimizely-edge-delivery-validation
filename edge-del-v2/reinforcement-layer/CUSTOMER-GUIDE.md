@@ -685,32 +685,60 @@ install reference.
 
 ### 8.1 Install — npm + bundler
 
+> **NOT YET PUBLISHED.** `@optimizely/edge-delivery-reinforce` is not
+> currently available on `registry.npmjs.org` or any private mirror.
+> Customers running `npm install @optimizely/edge-delivery-reinforce`
+> will hit a 404. Until the package is published, **use the vendored
+> script-tag install in §8.2** instead. This section documents the
+> shape the published package will take so integration code can be
+> written against the eventual import path.
+
 ```bash
-npm install @optimizely/edge-delivery-reinforce
+npm install @optimizely/edge-delivery-reinforce   # FUTURE — not yet available
 ```
 
 In the customer's page entry (Nuxt plugin, layout, or `app.vue`):
 
 ```typescript
-import '@optimizely/edge-delivery-reinforce/companion';
+import '@optimizely/edge-delivery-reinforce/companion';   // FUTURE
 ```
 
 The import is a side-effect import. The companion's IIFE runs on load,
 reads the inline manifest, primes the hydration hook. The customer
-adds nothing else.
+adds nothing else. Once the package is published, this install path
+will become the recommended one and §8.2 will move to the alternative
+"strict CSP / no bundler" position.
 
 ### 8.2 Install — vendored script tag
 
-If the customer prefers not to add an npm dependency:
+**Current canonical install path.** The `@optimizely/edge-delivery-reinforce`
+npm package referenced in some integration snippets in §8.5 is not yet
+published to a public registry — until that ships, this vendored
+script-tag path is the recommended install for every framework. The
+framework-specific snippets below use this path; the only piece of
+framework-specific code the customer writes is the hydration-signal
+dispatch (§8.5.2 for React, §8.5.1 for Vue/Nuxt), not the import.
 
 ```html
 <!-- Place anywhere in the page; ideally just before </body> -->
 <script src="/static/edge-del-v2-companion.min.js"></script>
 ```
 
-The companion bundle is ~4 KB minified. Host it under the customer's
-own static assets. No CDN dependency on Optimizely's infrastructure for
-the companion itself.
+The companion bundle is ~11 KB minified (includes Nuxt, Backbone, and
+generic framework adapters plus the `edge-del-v2-hydrated` custom-event
+listener). Host it under the customer's own static assets. No CDN
+dependency on Optimizely's infrastructure for the companion itself.
+
+**Where to fetch the bundle** until the npm package publishes:
+
+```
+https://github.com/simone-coelho/optimizely-edge-delivery-validation/raw/main/edge-del-v2/reinforcement-layer/training-pack/code/companion.min.js
+```
+
+Drop the file into the customer's static-asset directory (typically
+`/public/static/` or equivalent) and reference it via the script tag
+above. The file is self-contained — no peer dependencies, no build
+step on the customer side.
 
 ### 8.3 Companion lifecycle internals
 
@@ -792,17 +820,35 @@ detection code in `companion.ts` plus a one-paragraph install snippet.
    Covers vanilla Vue 3 apps not using Nuxt.
 3. `requestIdleCallback(cb, { timeout: 500 })` — generic fallback.
 
-**Customer install**: a side-effect import in any always-loaded entry
-(Nuxt plugin, `app.vue`, or directly in `nuxt.config.ts` via the
-`scripts` config).
+**Customer install**: load `companion.min.js` per §8.2. The Nuxt
+adapter auto-detects on boot — `useNuxtApp().hook('app:mounted', …)`
+fires the apply with no further customer code.
 
-```typescript
-// plugins/edge-del-v2.client.ts
-import '@optimizely/edge-delivery-reinforce/companion';
+```html
+<!-- In any always-rendered template (e.g. app.vue or default layout). -->
+<script src="/static/edge-del-v2-companion.min.js"></script>
 ```
 
-If the SDK ships with the companion bundled (recommendation in §7.7),
-this import is unnecessary — upgrading the SDK delivers both pieces.
+Optional: if the customer wants explicit control over apply timing
+instead of relying on the Nuxt hook auto-detection, dispatch the
+`edge-del-v2-hydrated` event from `onMounted()` in `app.vue` (same
+pattern as §8.5.2). The companion's one-shot apply gate means the
+auto-detected hook becomes a no-op once the customer event fires —
+no risk of double-application.
+
+**Verification** — open the page after install and run in the console:
+
+```javascript
+window.__EDGE_DEL_V2__.events
+  .filter(e => e.kind.startsWith('hydration') || e.kind.startsWith('adapter'))
+  .map(e => ({ at: e.at.toFixed(1) + ' ms', kind: e.kind, detail: e.detail }));
+```
+
+Expect to see `adapter:auto-selected` with `'nuxt'`, then
+`hydration:nuxt-hook-armed`, then `hydration:signal-received` with
+`source: 'adapter:nuxt'`. If the source instead reads
+`'customer-event'`, the customer's explicit dispatch fired first —
+behaviour is identical either way.
 
 **Caveats**: the standard Vue 3.5 `data-allow-mismatch` attribute is
 emitted by the worker as a defence-in-depth signal; it does not
@@ -827,28 +873,44 @@ variation.
    become non-null and mounted.
 3. `requestIdleCallback(cb, { timeout: 500 })` — same generic fallback.
 
-**Customer install** (App Router):
+**Customer install — two steps**:
+
+**Step 1.** Load `companion.min.js` per §8.2. Drop the vendored file
+into static assets and reference it from the page document. In
+Next.js App Router this means adding the script to `app/layout.tsx`;
+in Pages Router add it to `pages/_document.tsx`. The script registers
+the `edge-del-v2-hydrated` listener at boot.
+
+**Step 2.** Dispatch the hydration signal from a `useEffect` in the
+root client component. The companion's listener fires the apply on
+first dispatch.
+
+**App Router** (`app/layout.tsx`):
 
 ```typescript
-// app/layout.tsx
 'use client';
 import { useEffect } from 'react';
-import '@optimizely/edge-delivery-reinforce/companion';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('edge-del-v2-hydrated'));
   }, []);
-  return <html><body>{children}</body></html>;
+  return (
+    <html>
+      <body>
+        {children}
+        <script src="/static/edge-del-v2-companion.min.js" defer />
+      </body>
+    </html>
+  );
 }
 ```
 
-**Customer install** (Pages Router):
+**Pages Router** (`pages/_app.tsx` + `pages/_document.tsx`):
 
 ```typescript
 // pages/_app.tsx
 import { useEffect } from 'react';
-import '@optimizely/edge-delivery-reinforce/companion';
 
 export default function App({ Component, pageProps }) {
   useEffect(() => {
@@ -857,6 +919,51 @@ export default function App({ Component, pageProps }) {
   return <Component {...pageProps} />;
 }
 ```
+
+```typescript
+// pages/_document.tsx — add the companion script tag
+import { Html, Head, Main, NextScript } from 'next/document';
+
+export default function Document() {
+  return (
+    <Html>
+      <Head />
+      <body>
+        <Main />
+        <NextScript />
+        <script src="/static/edge-del-v2-companion.min.js" defer />
+      </body>
+    </Html>
+  );
+}
+```
+
+**Verification** — open the page after install and run in the console:
+
+```javascript
+window.__EDGE_DEL_V2__.events
+  .filter(e => e.kind.startsWith('hydration'))
+  .map(e => ({ at: e.at.toFixed(1) + ' ms', kind: e.kind, source: e.detail?.source }));
+```
+
+Expect to see, in order:
+- `hydration:custom-event-armed` — the companion's `edge-del-v2-hydrated`
+  listener is registered at boot.
+- `hydration:signal-received` with `source: 'customer-event'` — your
+  `useEffect`'s `dispatchEvent` fired and the apply ran.
+
+If you see `hydration:signal-received` with a different `source`
+(e.g. `adapter:generic`), the framework auto-adapter's fallback signal
+fired before your custom event. Behaviour is identical either way —
+both paths go through the same one-shot apply gate, so no
+double-application. If you want explicit control over timing, the
+`useEffect` dispatch is the supported way to do it.
+
+If you see `hydration:custom-event-armed` but never see the
+`source: 'customer-event'` signal, the dispatch from `useEffect` isn't
+reaching the companion — check that the script tag is loaded (defer
+order, CSP, browser console errors) and that the `useEffect` body
+actually runs (RSC vs client component boundary, Suspense gating).
 
 **Caveats**:
 - React 18+ has `suppressHydrationWarning` on individual elements

@@ -133,6 +133,12 @@ FINAL-REPORT-AMERISAVE.md
 ENGINEERING-REPORT-304-BLANK-PAGE-FIX.md
 ENGINEERING-REPORT-STALE-REVISION.md
 
+# Customer reply drafts (not pushed — internal communication staging)
+_customer-replies/
+**/_customer-replies/
+CUSTOMER-REPLY-*.md
+**/CUSTOMER-REPLY-*.md
+
 # Local recovery backup of edge-del-v2 (same content; do not push)
 edge-del-v2-recovered/
 
