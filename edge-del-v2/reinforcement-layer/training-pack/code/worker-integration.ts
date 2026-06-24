@@ -224,27 +224,62 @@ export async function handleRequestWithReinforcement(
     return ssrResponse;
   }
 
-  // (2) Edge Delivery
+  // (2) Buffer the SSR body once. Two reasons:
+  //
+  //   (a) `applyExperiments` accepts `control` as a Response and reads
+  //       its body lazily via an HTMLRewriter transform. If the SDK
+  //       throws partway through reading the stream, the original SSR
+  //       response is in an indeterminate consumption state and cannot
+  //       be safely returned to the client (Workers' Response model
+  //       only allows reading a body stream once). The SDK itself
+  //       validates `control.bodyUsed` and warns "Control passed body
+  //       is already used" — confirmation that this is the failure
+  //       mode we are protecting against.
+  //
+  //   (b) Buffering at the top means the error fallback can reuse the
+  //       same buffered body to construct a fresh Response, avoiding a
+  //       re-fetch from origin (which would double origin load on the
+  //       error path).
+  //
+  // Memory cost is bounded by the response size: ~0.04–0.4% of the
+  // Cloudflare Workers 128 MB isolate limit for typical SSR HTML
+  // payloads (50–500 KB). For unusually large responses, an alternative
+  // pattern is to re-fetch from origin in the catch block — but accept
+  // the doubled origin load when the SDK errors.
+  const ssrBody       = await ssrResponse.text();
+  const ssrStatus     = ssrResponse.status;
+  const ssrStatusText = ssrResponse.statusText;
+  const ssrHeaders    = new Headers(ssrResponse.headers);
+  const freshSsr      = (): Response => new Response(ssrBody, {
+    status:     ssrStatus,
+    statusText: ssrStatusText,
+    headers:    ssrHeaders,
+  });
+
+  // (3) Edge Delivery — control is a freshly constructed Response, so
+  // even if the SDK partially consumes its stream and throws, the
+  // buffered `ssrBody` remains available for the error fallback.
   const options = {
     snippetId:   env.SNIPPET_ID,
     environment: 'prod',
-    control:     ssrResponse,
+    control:     freshSsr(),
   } as unknown as Options;
 
   let response: Response;
   try {
     response = await applyExperiments(request, ctx, options);
   } catch (err) {
-    // SDK error → fall open to origin SSR.
+    // SDK error → fall open with a fresh Response constructed from the
+    // buffered body. No origin re-fetch.
     console.error('applyExperiments error', err instanceof Error ? err.message : err);
-    return ssrResponse;
+    return freshSsr();
   }
 
-  // (3) Build the companion's manifest from the variation-applied body.
+  // (4) Build the companion's manifest from the variation-applied body.
   const body = await response.text();
   const ops  = await buildOpsFromManifest(body, env.SNIPPET_ID);
 
-  // (4) Inject the manifest JSON tag + the companion <script>.
+  // (5) Inject the manifest JSON tag + the companion <script>.
   const manifest: VariationManifest = { appliedAt: 'edge', ops };
   const manifestJson = JSON.stringify(manifest).replace(/<\/script/gi, '<\\/script');
 

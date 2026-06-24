@@ -188,11 +188,15 @@ would ship Edge Delivery in production.
     │   │              <div style="display:contents"              │   │
     │   │                   data-optly-<changeId>>…</div>         │   │
     │   │                                                         │   │
-    │   │     3.  extractOpsFromBody(rewrittenHtml)               │   │
-    │   │           → scans the body we already have for          │   │
-    │   │             data-optly-<id> wrappers                    │   │
-    │   │           → builds Op[] for the companion               │   │
-    │   │           → ZERO subrequests                            │   │
+    │   │     3.  buildOpsFromManifest(rewrittenHtml, snippetId) │   │
+    │   │           → scans the body for data-optly-<id> markers │   │
+    │   │           → fetches the Optimizely manifest from       │   │
+    │   │             cdn.optimizely.com (cached on the same     │   │
+    │   │             CF edge — sub-millisecond on warm cache)   │   │
+    │   │           → resolves each marker to its full change    │   │
+    │   │             definition; emits the full Op[] including  │   │
+    │   │             text/attribute/class/add/remove/move/      │   │
+    │   │             rearrange ops                              │   │
     │   │                                                         │   │
     │   │     4.  inject inline manifest + companion <script>     │   │
     │   │           → final response: variation in the bytes,     │   │
@@ -282,17 +286,26 @@ match the deployed lab. Substitute customer values for production.
              For a typical SSR page (~50–350 KB post-snippet-injection)
              this buffer is sub-millisecond on Cloudflare's edge.
 
-    Step 9.  Worker runs extractOpsFromBody(html). Regex matches the
-             wrapper pattern, captures each change's changeId and inner
-             HTML, and lowercases the changeId for selector stability
-             (HTML attribute names are case-insensitive; DOM normalises
-             to lowercase). Output: a small Op[] like:
+    Step 9.  Worker runs buildOpsFromManifest(html, snippetId). Scans
+             the body for every data-optly-<changeId> marker the SDK
+             left behind, fetches the Optimizely manifest from
+             cdn.optimizely.com (cached on the same CF edge that just
+             served the SDK — sub-millisecond on warm cache), and
+             resolves each marker against the manifest to recover the
+             change's full definition. Output: a typed Op[] covering
+             every change the SDK applied. For our append change the
+             output is one entry:
                [{
                   type: 'add',
                   selector: '[data-optly-a9daa119-…]',
                   html:   '<article id="optly-edge-banner">…</article>',
                   position: 'append'
                }]
+             For an attribute change the output would be an
+             { type: 'attribute', selector, name, value } op; for a
+             rearrange, a { type: 'move', selector, toSelector,
+             position } op; etc. The full change-type → Op mapping
+             is in §7.4.
 
     Step 10. Worker constructs the manifest:
                {
@@ -467,30 +480,57 @@ portion, lightly annotated.
 ```typescript
 import { applyExperiments, Options } from '@optimizely/edge-delivery';
 import { COMPANION_SOURCE } from 'edge-del-v2-reinforce/companion-source';
+import type { Op } from 'edge-del-v2-reinforce';
 
-interface Op {
-  type: 'add';
-  selector: string;
-  html: string;
-  position: 'append';
-}
+// buildOpsFromManifest:
+//   1. Finds every data-optly-<changeId> marker in the response body
+//      the SDK just produced.
+//   2. Fetches the Optimizely manifest from
+//      cdn.optimizely.com/js/web_sdk_v0_<snippetId>.json. The CF edge
+//      cache is warm because the SDK just used it — sub-millisecond
+//      read on the second hit.
+//   3. Builds an id → change map from the manifest's
+//      experiments/campaigns/variations tree.
+//   4. For each marker present in the body, looks up its change and
+//      emits the corresponding Op (handles text, attribute, class,
+//      add, remove, move, and rearrange change types).
+//   5. Second pass handles rearrange changes, which don't carry their
+//      own marker on the source element — they declare a dependency
+//      on a scaffolding-attribute change that does. The second pass
+//      emits a move Op for each rearrange whose dependency overlaps
+//      a marker found in pass 1.
+//
+// Full source in
+//   edge-del-v2/target-app/server/edge-entry.ts (lab worker)
+//   edge-del-v2/reinforcement-layer/training-pack/code/worker-integration.ts (customer-facing reference)
+async function buildOpsFromManifest(body: string, snippetId: string): Promise<Op[]> {
+  const markerIds = findMarkerIds(body);
+  if (markerIds.size === 0) return [];
+  const manifest = await fetchManifest(snippetId);
+  if (!manifest) return [];
+  const cfg = manifest.config || manifest;
+  const { byId, allChanges } = buildChangeMap(cfg);
 
-function extractOpsFromBody(body: string): Op[] {
+  const seenChangeIds = new Set<string>();
   const ops: Op[] = [];
-  const wrapper =
-    /<div style="display:contents" data-optly-([A-Za-z0-9-]+)[^>]*>([\s\S]*?)<\/div>/g;
-  let m: RegExpExecArray | null;
-  while ((m = wrapper.exec(body)) !== null) {
-    const changeId = m[1].toLowerCase();
-    const innerHtml = m[2].trim();
-    if (!innerHtml) continue;
-    ops.push({
-      type: 'add',
-      selector: `[data-optly-${changeId}]`,
-      html: innerHtml,
-      position: 'append'
-    });
+
+  // Pass 1 — markers in the body → full op resolution.
+  for (const id of markerIds) {
+    const change = byId.get(id);
+    if (!change) continue;
+    seenChangeIds.add(id);
+    for (const op of changeToOps(change)) ops.push(op);
   }
+
+  // Pass 2 — rearrange changes resolved via dependency overlap.
+  for (const change of allChanges) {
+    if (change.type !== 'rearrange') continue;
+    const deps = (change.dependencies || []).map((d: any) => String(d).toLowerCase());
+    if (!deps.some((d: string) => markerIds.has(d))) continue;
+    if (seenChangeIds.has(String(change.id || '').toLowerCase())) continue;
+    for (const op of changeToOps(change)) ops.push(op);
+  }
+
   return ops;
 }
 
@@ -514,9 +554,9 @@ export default {
       logLevel:    'error'
     } as unknown as Options);
 
-    // 3. Buffer once. Single pass.
+    // 3. Buffer once. Single pass through the body.
     const body = await response.text();
-    const ops  = extractOpsFromBody(body);
+    const ops  = await buildOpsFromManifest(body, env.SNIPPET_ID);
 
     // 4. Build manifest, inject.
     const manifest = {
@@ -551,45 +591,56 @@ export default {
 };
 ```
 
+The `findMarkerIds`, `fetchManifest`, `buildChangeMap`, and `changeToOps`
+helpers are vendored alongside `buildOpsFromManifest` in
+`worker-integration.ts`. Customers do not implement these themselves —
+they copy the file as-is. Helper details and the per-change-type
+op-mapping logic are in §7.4.
+
 ### 7.4 Optimizely change.type → Op type mapping
 
-The current extractor only handles `append` / `prepend` / `replace` /
-`remove` / `move` change types because those are the ones the SDK
-expresses through the `<div style="display:contents" data-optly-<id>>`
-wrapper pattern. Attribute and class changes use different markers
-(direct attribute writes on the target element), which the extractor
-should also detect. Full mapping table for the SDK extension:
+`buildOpsFromManifest` resolves every Optimizely change type by
+looking the marker up in the project manifest fetched from
+`cdn.optimizely.com`, NOT by pattern-matching the response body's
+HTML structure. The manifest holds the canonical change definition
+(selector, attributes, html payload, operator, dependencies, etc.),
+so the extractor inherits the full Optimizely change vocabulary
+without having to detect each type from its DOM footprint. Full
+mapping table the in-worker `changeToOps(change)` helper implements:
 
-  Optimizely Change.type        Detection                                 Maps to Op
+  Optimizely Change.type        Detection (via manifest lookup)           Maps to Op
   --------------------------    ---------------------------------------   -------------------------------------------
-  append / prepend / replace    <div style="display:contents"             { type: 'add', selector:
-                                 data-optly-<id>>…</div>                    '[data-optly-<id>]',
-                                                                            html: <inner>,
-                                                                            position: <append|prepend|replace> }
-  remove / removeElement        Target element with data-optly-<id> +     { type: 'remove', selector:
-                                 the element absent post-rewrite           '[data-optly-<id>]' }
-                                 (SDK marks change via tombstone
-                                 attribute on parent; spec TBD)
-  attribute                     Target element with data-optly-<id> +     { type: 'attribute', selector:
-                                 attribute change manifested on the        '[data-optly-<id>]',
-                                 element                                    name: <attr>, value: <new value> }
-  class                         Target element with data-optly-<id> +     { type: 'class', selector:
-                                 class list change manifested on the       '[data-optly-<id>]',
-                                 element                                    add: [<added>], remove: [<removed>] }
-  substituteText / text         Target element with data-optly-<id> +     { type: 'text', selector:
-                                 child text node containing the new        '[data-optly-<id>]',
-                                 value                                      value: <new text> }
-  href / src / srcset / alt     Treated as attribute changes              { type: 'attribute', selector:
-                                                                            '[data-optly-<id>]',
-                                                                            name: <href|src|srcset|alt>,
-                                                                            value: <new value> }
-  move / reorder                Source element marked with data-optly-    { type: 'move', selector:
-                                 <id>; SDK reorders within parent           '[data-optly-<id>-src]',
-                                                                            toSelector: '[data-optly-<id>-target]',
-                                                                            position: <before|after|prepend|append> }
+  append / prepend / replace    change.type === 'append', operator        { type: 'add', selector,
+                                 ∈ {before, after, prepend, append,        html: change.value, position }
+                                 replace}
+  attribute (text)              change.attributes.text !== undefined      { type: 'text', selector,
+                                                                            value: change.attributes.text }
+  attribute (class)             change.attributes.class !== undefined     { type: 'attribute', selector,
+                                                                            name: 'class', value: change.attributes.class }
+  attribute (html)              change.attributes.html !== undefined      { type: 'add', selector,
+                                                                            html: change.attributes.html, position: 'replace' }
+  attribute (href / src /       change.attributes.{href|src|srcset|       { type: 'attribute', selector,
+   srcset / style)               style} !== undefined                       name, value }
+  attribute (hide)              change.attributes.hide === true           { type: 'attribute', selector,
+                                                                            name: 'style', value: 'display:none' }
+  attribute (remove)            change.attributes.remove === true         { type: 'remove', selector }
+  rearrange                     change.type === 'rearrange'               { type: 'move', selector,
+                                 (resolved in pass 2 via the change's      toSelector: change.insertSelector,
+                                 declared dependency on a scaffolding-     position: change.operator }
+                                 attribute change with its own marker)
+  custom_code                   change.type === 'custom_code'             skipped — re-running custom code blocks
+                                                                            from JSON could re-trigger side effects;
+                                                                            the Custom Code block runs as part of
+                                                                            the worker's response and is expected
+                                                                            to be self-defensive (MutationObserver
+                                                                            pattern; see decomposition-pattern
+                                                                            examples)
 
-The reference implementation today only emits `add` ops; the table above
-is the spec for completing the extractor in the published SDK.
+The companion's `applyOp(op, mark)` consumes every op type above
+via the primitives in `reinforce/src/ops.ts`. Adding a new change
+type requires extending both the `changeToOps` mapper and a matching
+`applyOp` primitive — but the existing six op types cover every
+Optimizely Visual Editor change today.
 
 ### 7.5 Where the change should land in the SDK
 
